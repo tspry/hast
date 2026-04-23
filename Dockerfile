@@ -1,80 +1,80 @@
 # ── Stage 1: Download Go-based security tools ─────────────────────────────────
 FROM debian:bookworm-slim AS tool-downloader
 
-# TARGETARCH is injected by BuildKit: "amd64" or "arm64"
-ARG TARGETARCH=amd64
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates unzip tar \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tools
 
-# nuclei
-RUN VER=$(curl -sf https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
+# Detect arch from uname -m at build time — works on every Docker version
+# and every platform without relying on BuildKit ARG injection.
+RUN set -eux \
+ && UNAME=$(uname -m) \
+ && case "$UNAME" in \
+      x86_64)        GOARCH=amd64 ;; \
+      aarch64|arm64) GOARCH=arm64 ;; \
+      armv7l)        GOARCH=arm_7 ;; \
+      *)             echo "[warn] Unknown arch $UNAME, defaulting to amd64"; GOARCH=amd64 ;; \
+    esac \
+ && echo "==> Detected arch: $GOARCH (uname -m: $UNAME)" \
+ \
+ && VER=$(curl -sf https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/projectdiscovery/nuclei/releases/download/${VER}/nuclei_${VER#v}_linux_${TARGETARCH}.zip" \
+ && curl -sfL "https://github.com/projectdiscovery/nuclei/releases/download/${VER}/nuclei_${VER#v}_linux_${GOARCH}.zip" \
          -o nuclei.zip \
  && unzip -q nuclei.zip nuclei && chmod +x nuclei && rm nuclei.zip \
- || { echo "[warn] nuclei download failed — will be skipped"; true; }
-
-# katana
-RUN VER=$(curl -sf https://api.github.com/repos/projectdiscovery/katana/releases/latest \
+ || echo "[warn] nuclei download failed" \
+ \
+ && VER=$(curl -sf https://api.github.com/repos/projectdiscovery/katana/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${TARGETARCH}.zip" \
+ && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${GOARCH}.zip" \
          -o katana.zip \
  && unzip -q katana.zip katana && chmod +x katana && rm katana.zip \
- || { echo "[warn] katana download failed — will be skipped"; true; }
-
-# gospider
-RUN ARCH=${TARGETARCH} \
+ || echo "[warn] katana download failed" \
+ \
  && VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${ARCH}.zip" \
+ && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${GOARCH}.zip" \
          -o gospider.zip \
  && unzip -qj gospider.zip "*/gospider" -d . && chmod +x gospider && rm gospider.zip \
- || { echo "[warn] gospider download failed — will be skipped"; true; }
-
-# hakrawler
-RUN VER=$(curl -sf https://api.github.com/repos/hakluke/hakrawler/releases/latest \
+ || echo "[warn] gospider download failed" \
+ \
+ && VER=$(curl -sf https://api.github.com/repos/hakluke/hakrawler/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${TARGETARCH}.tar.gz" \
+ && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${GOARCH}.tar.gz" \
          -o hakrawler.tar.gz \
  && tar -xzf hakrawler.tar.gz hakrawler && chmod +x hakrawler && rm hakrawler.tar.gz \
- || { echo "[warn] hakrawler download failed — will be skipped"; true; }
-
-# gau
-RUN VER=$(curl -sf https://api.github.com/repos/lc/gau/releases/latest \
+ || echo "[warn] hakrawler download failed" \
+ \
+ && VER=$(curl -sf https://api.github.com/repos/lc/gau/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_${TARGETARCH}.tar.gz" \
+ && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_${GOARCH}.tar.gz" \
          -o gau.tar.gz \
  && tar -xzf gau.tar.gz gau && chmod +x gau && rm gau.tar.gz \
- || { echo "[warn] gau download failed — will be skipped"; true; }
-
-# ffuf
-RUN VER=$(curl -sf https://api.github.com/repos/ffuf/ffuf/releases/latest \
+ || echo "[warn] gau download failed" \
+ \
+ && VER=$(curl -sf https://api.github.com/repos/ffuf/ffuf/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_${TARGETARCH}.tar.gz" \
+ && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_${GOARCH}.tar.gz" \
          -o ffuf.tar.gz \
  && tar -xzf ffuf.tar.gz ffuf && chmod +x ffuf && rm ffuf.tar.gz \
- || { echo "[warn] ffuf download failed — will be skipped"; true; }
-
-# trufflehog
-RUN VER=$(curl -sf https://api.github.com/repos/trufflesecurity/trufflehog/releases/latest \
+ || echo "[warn] ffuf download failed" \
+ \
+ && VER=$(curl -sf https://api.github.com/repos/trufflesecurity/trufflehog/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_${TARGETARCH}.tar.gz" \
+ && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_${GOARCH}.tar.gz" \
          -o trufflehog.tar.gz \
  && tar -xzf trufflehog.tar.gz trufflehog && chmod +x trufflehog && rm trufflehog.tar.gz \
- || { echo "[warn] trufflehog download failed — will be skipped"; true; }
-
-# gitleaks — uses "x64" instead of "amd64" in release filenames
-RUN GLARCH=$([ "${TARGETARCH}" = "amd64" ] && echo "x64" || echo "${TARGETARCH}") \
+ || echo "[warn] trufflehog download failed" \
+ \
+ && GLARCH=$([ "$GOARCH" = "amd64" ] && echo "x64" || echo "$GOARCH") \
  && VER=$(curl -sf https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && curl -sfL "https://github.com/gitleaks/gitleaks/releases/download/${VER}/gitleaks_${VER#v}_linux_${GLARCH}.tar.gz" \
          -o gitleaks.tar.gz \
  && tar -xzf gitleaks.tar.gz gitleaks && chmod +x gitleaks && rm gitleaks.tar.gz \
- || { echo "[warn] gitleaks download failed — will be skipped"; true; }
+ || echo "[warn] gitleaks download failed"
 
 # Ensure /tools/ always has at least one file so COPY doesn't fail
 RUN touch /tools/.keep
@@ -86,14 +86,20 @@ FROM python:3.12-slim-bookworm
 LABEL org.opencontainers.image.title="HAST Security Scanner"
 LABEL org.opencontainers.image.description="Hardening & Attack Surface Tester"
 
-# nmap, curl, ruby (for whatweb)
+# nmap, curl, ruby (for whatweb), libcap2-bin (for setcap on nmap)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nmap curl ca-certificates \
+    nmap curl ca-certificates libcap2-bin \
     ruby ruby-dev build-essential \
  && gem install --no-document whatweb 2>/dev/null || echo "[warn] whatweb gem install failed" \
  && apt-get purge -y build-essential ruby-dev \
  && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/* /root/.gem/ruby/*/cache
+
+# Allow nmap to use raw sockets as non-root (needed for SYN scanning)
+RUN setcap cap_net_raw+ep /usr/bin/nmap
+
+# Create non-root user hero
+RUN groupadd -r hero && useradd -r -g hero -m -d /home/hero -s /bin/sh hero
 
 # wafw00f via pip
 RUN pip install --no-cache-dir wafw00f
@@ -145,6 +151,13 @@ EXPOSE 8765
 VOLUME ["/data"]
 
 ENV HAST_DB_PATH=/data/hast.db
+
+# Set ownership so hero can write to app dirs and the data volume
+RUN mkdir -p /data /nuclei-templates \
+ && chown -R hero:hero /app /nuclei-templates /data
+
+# Drop to non-root user
+USER hero
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
   CMD curl -sf http://localhost:8765/ || exit 1
