@@ -18,9 +18,9 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  # ── Build Docker image ───────────────────────────────────────────────────────
+  # ── Build multi-arch Docker image ─────────────────────────────────────────────
   build:
-    name: Build Docker Image
+    name: Build Docker Image (amd64 + arm64)
     runs-on: ubuntu-latest
     permissions:
       contents: write       # needed to create GitHub Release
@@ -29,6 +29,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # QEMU lets the amd64 runner emulate arm64 for the build
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -52,31 +56,49 @@ jobs:
             type=raw,value=${{ inputs.version }}
             type=raw,value=latest
 
-      # ── Build (and push to ghcr.io if requested) ──────────────────────────────
-      - name: Build and push image
+      # ── Build multi-arch and push to ghcr.io ──────────────────────────────────
+      - name: Build and push multi-arch image
         id: build
         uses: docker/build-push-action@v5
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: ${{ inputs.push_to_registry }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ── Export image as downloadable tar.gz artifact ──────────────────────────
-      - name: Export Docker image to tar.gz
+      # ── Export amd64 image as downloadable tar.gz artifact ────────────────────
+      # (docker save only works for a single arch — we export amd64 for the tarball)
+      - name: Export amd64 Docker image to tar.gz
         run: |
-          docker build -t ${{ env.IMAGE_NAME }}:${{ inputs.version }} .
-          docker save ${{ env.IMAGE_NAME }}:${{ inputs.version }} \
-            | gzip > hast-${{ inputs.version }}-docker-image.tar.gz
-          echo "Artifact size: $(du -sh hast-${{ inputs.version }}-docker-image.tar.gz | cut -f1)"
+          docker build --platform linux/amd64 \
+            -t ${{ env.IMAGE_NAME }}:${{ inputs.version }}-amd64 .
+          docker save ${{ env.IMAGE_NAME }}:${{ inputs.version }}-amd64 \
+            | gzip > hast-${{ inputs.version }}-docker-amd64.tar.gz
+          echo "amd64 size: $(du -sh hast-${{ inputs.version }}-docker-amd64.tar.gz | cut -f1)"
 
-      - name: Upload Docker image artifact
+      - name: Export arm64 Docker image to tar.gz
+        run: |
+          docker build --platform linux/arm64 \
+            -t ${{ env.IMAGE_NAME }}:${{ inputs.version }}-arm64 .
+          docker save ${{ env.IMAGE_NAME }}:${{ inputs.version }}-arm64 \
+            | gzip > hast-${{ inputs.version }}-docker-arm64.tar.gz
+          echo "arm64 size: $(du -sh hast-${{ inputs.version }}-docker-arm64.tar.gz | cut -f1)"
+
+      - name: Upload amd64 image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hast-${{ inputs.version }}-docker-image
-          path: hast-${{ inputs.version }}-docker-image.tar.gz
+          name: hast-${{ inputs.version }}-docker-amd64
+          path: hast-${{ inputs.version }}-docker-amd64.tar.gz
+          retention-days: 30
+
+      - name: Upload arm64 image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hast-${{ inputs.version }}-docker-arm64
+          path: hast-${{ inputs.version }}-docker-arm64.tar.gz
           retention-days: 30
 
       # ── Package source (no secrets, no DB) ────────────────────────────────────
@@ -108,7 +130,8 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            hast-${{ inputs.version }}-docker-image.tar.gz
+            hast-${{ inputs.version }}-docker-amd64.tar.gz
+            hast-${{ inputs.version }}-docker-arm64.tar.gz
             hast-${{ inputs.version }}-source.zip
           body: |
             ## HAST — Hardening & Attack Surface Tester ${{ inputs.version }}
@@ -117,12 +140,14 @@ jobs:
 
             **Option 1 — Docker (recommended)**
             ```bash
-            # Pull from registry
+            # Pull from registry (auto-selects your arch)
             docker pull ghcr.io/${{ github.repository_owner }}/hast-scanner:${{ inputs.version }}
+            docker run -p 8765:8765 --cap-add NET_RAW \
+              ghcr.io/${{ github.repository_owner }}/hast-scanner:${{ inputs.version }}
 
-            # Or load from the downloaded tar.gz
-            docker load < hast-${{ inputs.version }}-docker-image.tar.gz
-            docker run -p 8765:8765 --cap-add NET_RAW hast-scanner:${{ inputs.version }}
+            # Or load from the downloaded tar.gz (pick amd64 or arm64)
+            docker load < hast-${{ inputs.version }}-docker-amd64.tar.gz
+            docker run -p 8765:8765 --cap-add NET_RAW hast-scanner:${{ inputs.version }}-amd64
             ```
 
             **Option 2 — Source**
@@ -135,9 +160,9 @@ jobs:
             ### Dashboard
             Open **http://localhost:8765** after starting.
 
-            ### What's included
-            - Full Docker image with all security tools pre-installed
-            - Source code archive
+            ### Supported platforms
+            - `linux/amd64` — standard servers, most CI runners
+            - `linux/arm64` — Apple Silicon Mac, Raspberry Pi, AWS Graviton
 
             ### Tools bundled in Docker image
             `nmap` · `nuclei` · `katana` · `gospider` · `hakrawler` · `gau` · `ffuf` · `trufflehog` · `gitleaks` · `wafw00f` · `whatweb` · `curl`

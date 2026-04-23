@@ -1,19 +1,19 @@
 # ── Stage 1: Download Go-based security tools ─────────────────────────────────
 FROM debian:bookworm-slim AS tool-downloader
 
+# TARGETARCH is injected by BuildKit: "amd64" or "arm64"
+ARG TARGETARCH=amd64
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates unzip tar \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tools
 
-# Each block downloads to /tools/<name> if it succeeds, writes nothing if it fails.
-# The final image copies from /tools/ so only present binaries land on PATH.
-
 # nuclei
 RUN VER=$(curl -sf https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/projectdiscovery/nuclei/releases/download/${VER}/nuclei_${VER#v}_linux_amd64.zip" \
+ && curl -sfL "https://github.com/projectdiscovery/nuclei/releases/download/${VER}/nuclei_${VER#v}_linux_${TARGETARCH}.zip" \
          -o nuclei.zip \
  && unzip -q nuclei.zip nuclei && chmod +x nuclei && rm nuclei.zip \
  || { echo "[warn] nuclei download failed — will be skipped"; true; }
@@ -21,15 +21,16 @@ RUN VER=$(curl -sf https://api.github.com/repos/projectdiscovery/nuclei/releases
 # katana
 RUN VER=$(curl -sf https://api.github.com/repos/projectdiscovery/katana/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_amd64.zip" \
+ && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${TARGETARCH}.zip" \
          -o katana.zip \
  && unzip -q katana.zip katana && chmod +x katana && rm katana.zip \
  || { echo "[warn] katana download failed — will be skipped"; true; }
 
 # gospider
-RUN VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
+RUN ARCH=${TARGETARCH} \
+ && VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_amd64.zip" \
+ && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${ARCH}.zip" \
          -o gospider.zip \
  && unzip -qj gospider.zip "*/gospider" -d . && chmod +x gospider && rm gospider.zip \
  || { echo "[warn] gospider download failed — will be skipped"; true; }
@@ -37,7 +38,7 @@ RUN VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases
 # hakrawler
 RUN VER=$(curl -sf https://api.github.com/repos/hakluke/hakrawler/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_amd64.tar.gz" \
+ && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${TARGETARCH}.tar.gz" \
          -o hakrawler.tar.gz \
  && tar -xzf hakrawler.tar.gz hakrawler && chmod +x hakrawler && rm hakrawler.tar.gz \
  || { echo "[warn] hakrawler download failed — will be skipped"; true; }
@@ -45,7 +46,7 @@ RUN VER=$(curl -sf https://api.github.com/repos/hakluke/hakrawler/releases/lates
 # gau
 RUN VER=$(curl -sf https://api.github.com/repos/lc/gau/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_amd64.tar.gz" \
+ && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_${TARGETARCH}.tar.gz" \
          -o gau.tar.gz \
  && tar -xzf gau.tar.gz gau && chmod +x gau && rm gau.tar.gz \
  || { echo "[warn] gau download failed — will be skipped"; true; }
@@ -53,7 +54,7 @@ RUN VER=$(curl -sf https://api.github.com/repos/lc/gau/releases/latest \
 # ffuf
 RUN VER=$(curl -sf https://api.github.com/repos/ffuf/ffuf/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_amd64.tar.gz" \
+ && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_${TARGETARCH}.tar.gz" \
          -o ffuf.tar.gz \
  && tar -xzf ffuf.tar.gz ffuf && chmod +x ffuf && rm ffuf.tar.gz \
  || { echo "[warn] ffuf download failed — will be skipped"; true; }
@@ -61,15 +62,16 @@ RUN VER=$(curl -sf https://api.github.com/repos/ffuf/ffuf/releases/latest \
 # trufflehog
 RUN VER=$(curl -sf https://api.github.com/repos/trufflesecurity/trufflehog/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_amd64.tar.gz" \
+ && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_${TARGETARCH}.tar.gz" \
          -o trufflehog.tar.gz \
  && tar -xzf trufflehog.tar.gz trufflehog && chmod +x trufflehog && rm trufflehog.tar.gz \
  || { echo "[warn] trufflehog download failed — will be skipped"; true; }
 
-# gitleaks
-RUN VER=$(curl -sf https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+# gitleaks — uses "x64" instead of "amd64" in release filenames
+RUN GLARCH=$([ "${TARGETARCH}" = "amd64" ] && echo "x64" || echo "${TARGETARCH}") \
+ && VER=$(curl -sf https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/gitleaks/gitleaks/releases/download/${VER}/gitleaks_${VER#v}_linux_x64.tar.gz" \
+ && curl -sfL "https://github.com/gitleaks/gitleaks/releases/download/${VER}/gitleaks_${VER#v}_linux_${GLARCH}.tar.gz" \
          -o gitleaks.tar.gz \
  && tar -xzf gitleaks.tar.gz gitleaks && chmod +x gitleaks && rm gitleaks.tar.gz \
  || { echo "[warn] gitleaks download failed — will be skipped"; true; }
