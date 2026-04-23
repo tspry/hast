@@ -28,7 +28,10 @@ class Wafw00fTool(SimpleToolRunner):
                 m = re.search(r"behind (.+?)(?:\s+waf|$)", ev.data, re.I)
                 if m:
                     waf_name = m.group(1).strip()
-            elif "no waf detected" in line or "generic detection" in line:
+            elif "no waf detected" in line and not waf_detected:
+                # Only clear if a specific WAF hasn't already been confirmed.
+                # "Generic Detection results:" header also contains related text
+                # and must not override a confirmed specific detection.
                 waf_detected = False
 
         if waf_detected:

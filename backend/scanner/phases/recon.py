@@ -50,12 +50,14 @@ async def run_recon(
                 await emit("log", {"tool": "wafw00f", "stream": item.stream, "data": item.data})
         await emit("tool_status", {"tool": "wafw00f", "status": "done"})
 
-    if result["waf_detected"]:
-        await emit("waf_detected", {
-            "detected": True,
-            "name": result["waf_name"],
-            "message": f"WAF detected: {result['waf_name']} — increasing rate limits",
-        })
+    await emit("waf_detected", {
+        "detected": result["waf_detected"],
+        "name": result["waf_name"] or "",
+        "message": (
+            f"WAF detected: {result['waf_name']} — increasing rate limits"
+            if result["waf_detected"] else "No WAF detected"
+        ),
+    })
 
     # ── nmap ─────────────────────────────────────────────────────────────────
     await emit("tool_status", {"tool": "nmap", "status": "running"})
