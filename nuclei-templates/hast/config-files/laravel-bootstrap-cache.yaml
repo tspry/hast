@@ -1,0 +1,48 @@
+id: laravel-bootstrap-cache-exposed
+
+info:
+  name: Laravel Cached Config Exposed (bootstrap/cache/config.php)
+  author: hast
+  severity: critical
+  description: |
+    Laravel's compiled config cache is publicly accessible. This file contains ALL
+    application configuration including database credentials, mail passwords, API keys,
+    queue connection strings, and any value from every config file in the application.
+  remediation: |
+    Block access to bootstrap/cache/ via nginx or Apache.
+    Rotate all credentials found in the file.
+  tags: laravel,php,config,exposure,secrets
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/bootstrap/cache/config.php"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "<?php"
+          - "return array"
+          - "return ["
+        condition: or
+
+      - type: word
+        words:
+          - "password"
+          - "secret"
+          - "database"
+          - "APP_KEY"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: credentials
+        regex:
+          - "'password'\s*=>\s*'([^']+)'"
+          - "'secret'\s*=>\s*'([^']+)'"
+          - "'APP_KEY'\s*=>\s*'([^']+)'"

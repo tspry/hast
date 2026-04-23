@@ -1,0 +1,42 @@
+id: terraform-tfstate-exposed
+
+info:
+  name: Terraform State File Exposed
+  author: hast
+  severity: critical
+  description: |
+    A Terraform state file (terraform.tfstate) is publicly accessible. Terraform state
+    files contain the full plaintext values of all infrastructure secrets including
+    database passwords, cloud provider credentials, TLS private keys, API tokens,
+    and any sensitive_output values — even values marked as sensitive in Terraform.
+  remediation: |
+    Remove tfstate files from web root immediately. Use remote state backends
+    (S3 + encryption, Terraform Cloud, Azure Blob). Rotate all credentials found.
+  tags: terraform,devops,infra,config,exposure,secrets
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/terraform.tfstate"
+      - "{{BaseURL}}/terraform.tfstate.backup"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "\"terraform_version\""
+          - "\"resources\""
+          - "\"outputs\""
+        condition: or
+
+    extractors:
+      - type: json
+        name: tf_version
+        json:
+          - ".terraform_version"

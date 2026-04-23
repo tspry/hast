@@ -1,0 +1,50 @@
+id: django-settings-exposed
+
+info:
+  name: Django Settings File Exposed
+  author: hast
+  severity: critical
+  description: |
+    A Django settings file is publicly accessible. Settings files contain SECRET_KEY,
+    database credentials, installed apps list, allowed hosts, email passwords,
+    third-party API keys, and cloud storage credentials.
+  remediation: |
+    Block access to all .py files via server rules. Move secrets to environment
+    variables and use django-environ or python-decouple.
+  tags: django,python,config,exposure,secrets
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/settings.py"
+      - "{{BaseURL}}/local_settings.py"
+      - "{{BaseURL}}/config/settings.py"
+      - "{{BaseURL}}/config/settings/local.py"
+      - "{{BaseURL}}/config/settings/production.py"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "SECRET_KEY"
+          - "DATABASES"
+          - "INSTALLED_APPS"
+          - "Django settings"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: secret_key
+        regex:
+          - "SECRET_KEY\s*=\s*['\"]([^'\"]{20,})['\"]"
+      - type: regex
+        name: db_password
+        regex:
+          - "'PASSWORD'\s*:\s*'([^']+)'"
+          - "\"PASSWORD\"\s*:\s*\"([^\"]+)\""

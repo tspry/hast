@@ -1,0 +1,57 @@
+id: spa-runtime-config-exposed
+
+info:
+  name: SPA Runtime Configuration Exposed
+  author: hast
+  severity: high
+  description: |
+    A runtime configuration file used by a Single Page Application (React, Angular, Vue)
+    is publicly accessible. These files often contain API endpoints, feature flags,
+    authentication configuration, and sometimes API keys or tokens injected at deployment.
+  remediation: |
+    Review the file contents. Remove any secrets and use server-side injection or
+    environment-specific build configs instead of exposing runtime config as a static file.
+  tags: react,angular,vue,spa,config,exposure
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/runtime-config.js"
+      - "{{BaseURL}}/runtime-config.json"
+      - "{{BaseURL}}/env-config.js"
+      - "{{BaseURL}}/app-config.js"
+      - "{{BaseURL}}/app-config.json"
+      - "{{BaseURL}}/__ENV.js"
+      - "{{BaseURL}}/config.js"
+      - "{{BaseURL}}/environment.js"
+      - "{{BaseURL}}/environment.json"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "API_URL"
+          - "API_KEY"
+          - "BASE_URL"
+          - "AUTH_URL"
+          - "CLIENT_ID"
+          - "CLIENT_SECRET"
+          - "SENTRY_DSN"
+          - "GOOGLE_ANALYTICS"
+          - "window.__ENV"
+          - "window.AppConfig"
+          - "window.env"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: api_keys
+        regex:
+          - "API_KEY['\"]?\s*[:=]\s*['\"]([^'\"]{10,})['\"]"
+          - "CLIENT_SECRET['\"]?\s*[:=]\s*['\"]([^'\"]{10,})['\"]"

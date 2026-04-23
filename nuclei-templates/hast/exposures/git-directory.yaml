@@ -1,0 +1,44 @@
+id: git-directory-exposed
+
+info:
+  name: Git Repository Exposed
+  author: hast
+  severity: critical
+  description: |
+    The .git directory is publicly accessible. An exposed .git directory allows
+    an attacker to reconstruct the full source code of the application using
+    tools like git-dumper or GitTools, exposing all commit history, branches,
+    hardcoded credentials in past commits, and the complete codebase.
+  remediation: |
+    Block access to .git/ immediately.
+    nginx:  location ~ /\.git { deny all; }
+    Apache: <DirectoryMatch "\.git"> Require all denied </DirectoryMatch>
+    If exposed, assume full source code compromise. Rotate all credentials
+    that have ever appeared in any commit.
+  tags: git,exposure,config
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+      - "{{BaseURL}}/.git/HEAD"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "[core]"
+          - "ref: refs/"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: remote_url
+        regex:
+          - "url = (.*)"

@@ -1,0 +1,41 @@
+id: npmrc-exposed
+
+info:
+  name: .npmrc File Exposed
+  author: hast
+  severity: critical
+  description: |
+    The .npmrc configuration file is publicly accessible. This file can contain
+    npm authentication tokens (//registry.npmjs.org/:_authToken) which grant
+    full read/write access to npm packages, including the ability to publish
+    malicious package versions (supply chain attack).
+  remediation: |
+    Remove .npmrc from web root immediately. Rotate the npm token at npmjs.com.
+    Add .npmrc to .gitignore and configure tokens via CI/CD environment variables.
+  tags: nodejs,npm,config,exposure,secrets,token
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.npmrc"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "_authToken"
+          - "//registry"
+          - "_password"
+          - "//npm.pkg.github.com"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: npm_token
+        regex:
+          - "_authToken=([a-zA-Z0-9_\\-\\.]+)"
+          - "_authToken=\"([^\"]+)\""

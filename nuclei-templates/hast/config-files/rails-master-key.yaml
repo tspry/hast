@@ -1,0 +1,38 @@
+id: rails-master-key-exposed
+
+info:
+  name: Rails Master Key Exposed
+  author: hast
+  severity: critical
+  description: |
+    Rails config/master.key is publicly accessible. This key decrypts all Rails
+    encrypted credentials (config/credentials.yml.enc) giving full access to every
+    secret in the application including database passwords, API keys, and tokens.
+  remediation: |
+    Block access immediately via nginx (deny all) or Apache (Require all denied).
+    If exposed, rotate ALL credentials in config/credentials.yml.enc.
+  tags: rails,ruby,config,exposure,secrets
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/config/master.key"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: regex
+        regex:
+          - "^[a-f0-9]{64}$"
+          - "^[a-zA-Z0-9+/]{43}=$"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: master_key
+        regex:
+          - "^[a-f0-9]{64}"
+          - "^[a-zA-Z0-9+/]{43}="

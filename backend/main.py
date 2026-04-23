@@ -1,0 +1,104 @@
+"""HAST – Security Hardening Scanner Dashboard
+Main FastAPI application entry point.
+"""
+from __future__ import annotations
+
+import asyncio
+import subprocess
+import sys
+import webbrowser
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from backend.config import load_config, get_config
+from backend.db.database import init_db
+from backend.api.routes import router
+from backend.api.ws_handler import handle_websocket
+
+# ── App setup ─────────────────────────────────────────────────────────────────
+
+app = FastAPI(title="HAST Security Scanner", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+
+
+@app.on_event("startup")
+async def startup():
+    load_config()
+    await init_db()
+    cfg = get_config()
+    print(f"\n  HAST Security Scanner")
+    print(f"  ─────────────────────────────────────")
+    print(f"  Dashboard: http://{cfg['server_host']}:{cfg['server_port']}")
+    print(f"  API:       http://{cfg['server_host']}:{cfg['server_port']}/api")
+    print(f"  ─────────────────────────────────────\n")
+
+    if cfg.get("open_browser", True):
+        asyncio.get_event_loop().call_later(
+            1.5,
+            lambda: webbrowser.open(f"http://{cfg['server_host']}:{cfg['server_port']}"),
+        )
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    from backend.db.database import close_db
+    await close_db()
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+app.include_router(router)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await handle_websocket(ws)
+
+
+# ── Static files ──────────────────────────────────────────────────────────────
+
+if FRONTEND_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+    @app.get("/{path:path}")
+    async def serve_static(path: str):
+        target = FRONTEND_DIR / path
+        if target.is_file():
+            return FileResponse(str(target))
+        return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main():
+    load_config()
+    cfg = get_config()
+    uvicorn.run(
+        "backend.main:app",
+        host=cfg.get("server_host", "127.0.0.1"),
+        port=int(cfg.get("server_port", 8765)),
+        reload=False,
+        log_level="warning",
+    )
+
+
+if __name__ == "__main__":
+    main()

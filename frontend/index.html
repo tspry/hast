@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HAST – Security Scanner</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- ── Top Bar ─────────────────────────────────────────────────── -->
+<div id="topbar">
+  <span class="logo">HAST</span>
+  <div id="conn-status" title="WebSocket disconnected"></div>
+
+  <input id="target-input" type="url" placeholder="https://target.example.com" spellcheck="false" />
+
+  <select id="profile-select">
+    <option value="quick">Quick</option>
+    <option value="standard" selected>Standard</option>
+    <option value="deep">Deep</option>
+  </select>
+
+  <button class="btn btn-primary" id="scan-btn" onclick="App.startScan()">
+    <span>▶ Scan</span>
+  </button>
+  <button class="btn btn-danger" id="stop-btn" onclick="App.stopScan()" disabled>
+    ■ Stop
+  </button>
+
+  <div id="waf-badge"></div>
+
+  <div style="margin-left:auto; display:flex; gap:6px; position:relative;">
+    <button class="btn btn-ghost btn-sm" onclick="App.openBulkScan()" title="Scan multiple targets at once">
+      ⊞ Bulk Scan
+    </button>
+    <button class="btn btn-ghost btn-sm" id="history-btn" onclick="App.toggleHistory()">
+      History ▾
+    </button>
+    <div id="history-menu"></div>
+  </div>
+</div>
+
+<!-- ── Bulk Scan Modal ────────────────────────────────────────────── -->
+<div id="bulk-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:center; justify-content:center;">
+  <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius-lg); width:560px; max-width:95vw; padding:24px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+      <h2 style="font-size:15px; font-weight:700;">⊞ Bulk Scan</h2>
+      <button class="btn btn-ghost btn-sm" onclick="App.closeBulkScan()">✕</button>
+    </div>
+
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:14px; line-height:1.6;">
+      Scan multiple targets sequentially. Each target gets its own scan record in history.
+      Use <b>Quick</b> profile to check for exposed config files fast.
+    </p>
+
+    <div class="config-group">
+      <label>Targets — one per line</label>
+      <textarea id="bulk-targets"
+        style="width:100%; height:160px; padding:8px 12px; background:var(--bg-primary);
+               border:1px solid var(--border); border-radius:var(--radius); color:var(--text-primary);
+               font-family:var(--font-mono); font-size:12px; resize:vertical; outline:none; line-height:1.6;"
+        placeholder="https://app1.example.com&#10;https://app2.example.com&#10;https://api.example.com&#10;app3.example.com (https:// added automatically)"></textarea>
+    </div>
+
+    <div style="display:flex; gap:10px; align-items:center; margin-bottom:16px;">
+      <div class="config-group" style="flex:1; margin:0;">
+        <label>Profile</label>
+        <select id="bulk-profile" style="width:100%; padding:7px 12px; background:var(--bg-primary); border:1px solid var(--border); border-radius:var(--radius); color:var(--text-primary); font-size:12px;">
+          <option value="quick" selected>Quick — config files + nuclei exposures only (fastest)</option>
+          <option value="standard">Standard — full scan</option>
+          <option value="deep">Deep — everything</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- What Quick profile checks notice -->
+    <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:12px; margin-bottom:16px; font-size:11px; color:var(--text-muted); line-height:1.8;">
+      <div style="color:var(--accent); font-weight:700; margin-bottom:4px;">Quick profile probes all stacks:</div>
+      <span style="color:var(--sev-high);">.NET</span> appsettings.json · runtime.json · web.config · connectionstrings.json ·
+      <span style="color:var(--sev-high);">PHP</span> wp-config.php · .env · config/database.php · bootstrap/cache/config.php · xmlrpc.php ·
+      <span style="color:var(--sev-high);">Node/React</span> .npmrc · package.json · runtime-config.js · env-config.js · *.js.map ·
+      <span style="color:var(--sev-high);">Python</span> settings.py · local_settings.py · .flaskenv ·
+      <span style="color:var(--sev-high);">Rails</span> config/master.key · config/secrets.yml · config/database.yml ·
+      <span style="color:var(--sev-high);">Java</span> application.yml · actuator/env · actuator/heapdump ·
+      <span style="color:var(--sev-high);">Infra</span> docker-compose.yml · terraform.tfstate · .git/config · .aws/credentials ·
+      <span style="color:var(--green);">+ <span id="bulk-path-count"></span> total paths</span>
+    </div>
+
+    <div id="bulk-status" style="font-size:12px; color:var(--text-muted); min-height:20px; margin-bottom:12px;"></div>
+
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn btn-ghost" onclick="App.closeBulkScan()">Cancel</button>
+      <button class="btn btn-primary" id="bulk-run-btn" onclick="App.runBulkScan()">▶ Start Bulk Scan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Main Area ────────────────────────────────────────────────── -->
+<div id="main-area">
+
+  <!-- Left Panel: Phase / Tool Status -->
+  <div id="left-panel">
+    <div class="panel-header">Scan Progress</div>
+
+    <div class="phase-section" id="phase-recon">
+      <div class="phase-label">
+        <span class="phase-icon">🔍</span>
+        <span class="phase-name">Recon</span>
+        <span class="phase-status-badge badge-idle" id="badge-recon">idle</span>
+      </div>
+      <div id="tools-recon">
+        <div class="tool-row" id="tool-wafw00f"><span class="tool-dot dot-queued"></span><span class="tool-name">wafw00f</span></div>
+        <div class="tool-row" id="tool-nmap"><span class="tool-dot dot-queued"></span><span class="tool-name">nmap</span></div>
+        <div class="tool-row" id="tool-whatweb"><span class="tool-dot dot-queued"></span><span class="tool-name">whatweb</span></div>
+      </div>
+    </div>
+
+    <div class="phase-section" id="phase-discovery">
+      <div class="phase-label">
+        <span class="phase-icon">🕷</span>
+        <span class="phase-name">Discovery</span>
+        <span class="phase-status-badge badge-idle" id="badge-discovery">idle</span>
+      </div>
+      <div id="tools-discovery">
+        <div class="tool-row" id="tool-katana"><span class="tool-dot dot-queued"></span><span class="tool-name">katana</span></div>
+        <div class="tool-row" id="tool-gospider"><span class="tool-dot dot-queued"></span><span class="tool-name">gospider</span></div>
+        <div class="tool-row" id="tool-hakrawler"><span class="tool-dot dot-queued"></span><span class="tool-name">hakrawler</span></div>
+        <div class="tool-row" id="tool-gau"><span class="tool-dot dot-queued"></span><span class="tool-name">gau</span></div>
+      </div>
+    </div>
+
+    <div class="phase-section" id="phase-scanning">
+      <div class="phase-label">
+        <span class="phase-icon">⚡</span>
+        <span class="phase-name">Scanning</span>
+        <span class="phase-status-badge badge-idle" id="badge-scanning">idle</span>
+      </div>
+      <div id="tools-scanning">
+        <div class="tool-row" id="tool-nuclei"><span class="tool-dot dot-queued"></span><span class="tool-name">nuclei</span></div>
+        <div class="tool-row" id="tool-ffuf"><span class="tool-dot dot-queued"></span><span class="tool-name">ffuf</span></div>
+        <div class="tool-row" id="tool-curl"><span class="tool-dot dot-queued"></span><span class="tool-name">curl (fallback)</span></div>
+        <div class="tool-row" id="tool-gitleaks"><span class="tool-dot dot-queued"></span><span class="tool-name">gitleaks</span></div>
+        <div class="tool-row" id="tool-trufflehog"><span class="tool-dot dot-queued"></span><span class="tool-name">trufflehog</span></div>
+      </div>
+    </div>
+
+    <div class="phase-section" id="phase-aggregation">
+      <div class="phase-label">
+        <span class="phase-icon">📊</span>
+        <span class="phase-name">Aggregation</span>
+        <span class="phase-status-badge badge-idle" id="badge-aggregation">idle</span>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div style="padding: 10px 14px; margin-top: auto;">
+      <div style="font-size:10px; color: var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">URLs Found</div>
+      <div id="stat-urls" style="font-family:var(--font-mono); font-size:18px; color:var(--accent);">—</div>
+      <div style="font-size:10px; color: var(--text-muted); margin-top:8px; text-transform:uppercase; letter-spacing:1px;">JS Files</div>
+      <div id="stat-js" style="font-family:var(--font-mono); font-size:14px; color:var(--text-secondary);">—</div>
+    </div>
+  </div>
+
+  <!-- Center Panel: Terminal -->
+  <div id="center-panel">
+    <div style="padding: 6px 16px; background: var(--bg-secondary); border-bottom: 1px solid var(--border); display:flex; align-items:center; gap:8px; flex-shrink:0;">
+      <span style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted);">Live Output</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;" onclick="App.clearTerminal()">Clear</button>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);cursor:pointer;">
+        <input type="checkbox" id="autoscroll" checked style="cursor:pointer;"> Auto-scroll
+      </label>
+    </div>
+    <div id="terminal-wrap">
+      <div id="terminal-output">
+        <div class="terminal-placeholder">
+          <pre>
+  ██╗  ██╗ █████╗ ███████╗████████╗
+  ██║  ██║██╔══██╗██╔════╝╚══██╔══╝
+  ███████║███████║███████╗   ██║
+  ██╔══██║██╔══██║╚════██║   ██║
+  ██║  ██║██║  ██║███████║   ██║
+  ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝
+          </pre>
+          <div>Hardening &amp; Attack Surface Tester</div>
+          <div style="margin-top:8px; color:var(--text-muted);">Enter a target URL above and click Scan to begin.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Panel: Findings Summary -->
+  <div id="right-panel">
+    <div class="panel-header">Findings</div>
+
+    <div class="severity-counter sev-critical" onclick="App.filterBySeverity('critical')">
+      <div class="sev-label"><div class="sev-dot"></div>Critical</div>
+      <div class="sev-count" id="count-critical">0</div>
+    </div>
+    <div class="severity-counter sev-high" onclick="App.filterBySeverity('high')">
+      <div class="sev-label"><div class="sev-dot"></div>High</div>
+      <div class="sev-count" id="count-high">0</div>
+    </div>
+    <div class="severity-counter sev-medium" onclick="App.filterBySeverity('medium')">
+      <div class="sev-label"><div class="sev-dot"></div>Medium</div>
+      <div class="sev-count" id="count-medium">0</div>
+    </div>
+    <div class="severity-counter sev-low" onclick="App.filterBySeverity('low')">
+      <div class="sev-label"><div class="sev-dot"></div>Low</div>
+      <div class="sev-count" id="count-low">0</div>
+    </div>
+    <div class="severity-counter sev-info" onclick="App.filterBySeverity('info')">
+      <div class="sev-label"><div class="sev-dot"></div>Info</div>
+      <div class="sev-count" id="count-info">0</div>
+    </div>
+
+    <div id="new-findings-badge" class="new-badge" style="display:none;">
+      <span>★</span> <span id="new-count">0</span> new findings
+    </div>
+
+    <div class="divider"></div>
+
+    <div style="padding: 8px 14px;">
+      <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Scan Status</div>
+      <div id="scan-status-text" style="font-size:12px; color:var(--text-secondary);">Idle</div>
+      <div id="scan-target-text" style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono); margin-top:3px; word-break:break-all;"></div>
+    </div>
+
+    <div style="padding: 8px 14px;">
+      <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">WAF Status</div>
+      <div id="waf-status-text" style="font-size:12px; color:var(--text-muted);">Unknown</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Resize Handle ─────────────────────────────────────────────── -->
+<div id="resize-handle"></div>
+
+<!-- ── Bottom Tabs Area ──────────────────────────────────────────── -->
+<div id="bottom-area">
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="App.showTab('findings')" id="tab-findings">Findings</button>
+    <button class="tab-btn" onclick="App.showTab('recon')" id="tab-recon">Recon</button>
+    <button class="tab-btn" onclick="App.showTab('js-secrets')" id="tab-js-secrets">JS Secrets</button>
+    <button class="tab-btn" onclick="App.showTab('diff')" id="tab-diff">Scan Diff</button>
+    <button class="tab-btn" onclick="App.showTab('config')" id="tab-config">Config</button>
+    <div class="tab-actions">
+      <button class="btn btn-ghost btn-sm" onclick="App.exportData('json')" title="Export JSON">⬇ JSON</button>
+      <button class="btn btn-ghost btn-sm" onclick="App.exportData('csv')"  title="Export CSV">⬇ CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="App.exportData('pdf')"  title="Export PDF">⬇ PDF</button>
+    </div>
+  </div>
+
+  <!-- Findings Tab -->
+  <div class="tab-pane active" id="pane-findings">
+    <div class="filter-bar">
+      <input type="text" id="filter-keyword" placeholder="Search findings..." oninput="App.applyFilters()">
+      <select id="filter-severity" onchange="App.applyFilters()">
+        <option value="">All Severities</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+        <option value="info">Info</option>
+      </select>
+      <select id="filter-tool" onchange="App.applyFilters()">
+        <option value="">All Tools</option>
+      </select>
+    </div>
+    <div class="findings-table-wrap">
+      <table class="findings-table" id="findings-table">
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Tool</th>
+            <th>Finding</th>
+            <th>URL</th>
+            <th>Risk</th>
+            <th>Evidence</th>
+            <th>New?</th>
+          </tr>
+        </thead>
+        <tbody id="findings-tbody">
+          <tr><td colspan="7" class="empty-state">No findings yet. Run a scan to get started.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recon Tab -->
+  <div class="tab-pane" id="pane-recon">
+    <div class="recon-grid" id="recon-content">
+      <div class="recon-card">
+        <h4>WAF Detection</h4>
+        <div id="recon-waf" class="text-muted">—</div>
+      </div>
+      <div class="recon-card">
+        <h4>Open Ports</h4>
+        <table class="port-table" id="port-table">
+          <thead><tr><th>Port</th><th>Proto</th><th>Service</th><th>Version</th></tr></thead>
+          <tbody id="port-tbody"><tr><td colspan="4" class="text-muted">—</td></tr></tbody>
+        </table>
+      </div>
+      <div class="recon-card">
+        <h4>Technology Stack</h4>
+        <div id="tech-stack">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS Secrets Tab -->
+  <div class="tab-pane" id="pane-js-secrets">
+    <div class="findings-table-wrap">
+      <table class="findings-table" id="js-secrets-table">
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Pattern</th>
+            <th>JS File</th>
+            <th>Evidence</th>
+            <th>Remediation</th>
+          </tr>
+        </thead>
+        <tbody id="js-secrets-tbody">
+          <tr><td colspan="5" class="empty-state">No JS secret findings yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Diff Tab -->
+  <div class="tab-pane" id="pane-diff">
+    <div id="diff-content">
+      <div class="empty-state">Run multiple scans on the same target to see diff.</div>
+    </div>
+  </div>
+
+  <!-- Config Tab -->
+  <div class="tab-pane" id="pane-config">
+    <div class="config-form">
+      <h3 style="font-size:13px; margin-bottom:14px; color:var(--text-secondary);">Scanner Configuration</h3>
+
+      <div class="config-group">
+        <label>Nuclei Templates Path</label>
+        <input type="text" id="cfg-nuclei-templates" placeholder="~/.local/nuclei-templates (auto-detect)">
+        <div class="config-hint">Auto-detected: ~/.local/nuclei-templates, ~/nuclei-templates, $NUCLEI_TEMPLATES</div>
+      </div>
+
+      <div class="config-group">
+        <label>SecLists Path</label>
+        <input type="text" id="cfg-seclists" placeholder="/usr/share/seclists (auto-detect)">
+        <div class="config-hint">Auto-detected: /usr/share/seclists, ~/seclists</div>
+      </div>
+
+      <div class="config-group">
+        <label>Rate Limit (ms between requests)</label>
+        <input type="number" id="cfg-rate-limit" min="50" max="5000" value="150">
+      </div>
+
+      <div class="config-group">
+        <label>WAF Rate Limit (ms, when WAF detected)</label>
+        <input type="number" id="cfg-waf-rate-limit" min="200" max="10000" value="500">
+      </div>
+
+      <div class="config-group">
+        <label>Default Profile</label>
+        <select id="cfg-default-profile">
+          <option value="quick">Quick</option>
+          <option value="standard">Standard</option>
+          <option value="deep">Deep</option>
+        </select>
+      </div>
+
+      <div class="config-group">
+        <label>
+          <input type="checkbox" id="cfg-respect-robots" checked style="margin-right:6px;">
+          Respect robots.txt
+        </label>
+      </div>
+
+      <button class="btn btn-primary" onclick="App.saveConfig()" style="margin-top:8px;">Save Config</button>
+
+      <div style="margin-top:20px;">
+        <h4 style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:10px;">Tool Status</h4>
+        <div id="tool-status-list" style="font-family:var(--font-mono); font-size:11px; line-height:2;">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>

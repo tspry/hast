@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Database — never commit scan history
+hast.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets / local overrides — never commit
+.env
+.env.local
+config.local.yaml
+config.override.yaml
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker
+docker-compose.override.yml
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Claude Code internal
+.claude/
+
+# Logs
+*.log
+logs/

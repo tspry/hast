@@ -1,0 +1,143 @@
+name: Build & Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v1.0.0)"
+        required: true
+        default: "v1.0.0"
+      push_to_registry:
+        description: "Push image to GitHub Container Registry (ghcr.io)"
+        required: true
+        type: boolean
+        default: true
+
+env:
+  IMAGE_NAME: hast-scanner
+  REGISTRY: ghcr.io
+
+jobs:
+  # ── Build Docker image ───────────────────────────────────────────────────────
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # needed to create GitHub Release
+      packages: write       # needed to push to ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Log in to ghcr.io ────────────────────────────────────────────────────
+      - name: Log in to GitHub Container Registry
+        if: ${{ inputs.push_to_registry }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Derive image tags ─────────────────────────────────────────────────────
+      - name: Set image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ inputs.version }}
+            type=raw,value=latest
+
+      # ── Build (and push to ghcr.io if requested) ──────────────────────────────
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ inputs.push_to_registry }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Export image as downloadable tar.gz artifact ──────────────────────────
+      - name: Export Docker image to tar.gz
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }}:${{ inputs.version }} .
+          docker save ${{ env.IMAGE_NAME }}:${{ inputs.version }} \
+            | gzip > hast-${{ inputs.version }}-docker-image.tar.gz
+          echo "Artifact size: $(du -sh hast-${{ inputs.version }}-docker-image.tar.gz | cut -f1)"
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hast-${{ inputs.version }}-docker-image
+          path: hast-${{ inputs.version }}-docker-image.tar.gz
+          retention-days: 30
+
+      # ── Package source (no secrets, no DB) ────────────────────────────────────
+      - name: Package source archive
+        run: |
+          zip -r hast-${{ inputs.version }}-source.zip . \
+            --exclude "*.git*" \
+            --exclude ".venv/*" \
+            --exclude "__pycache__/*" \
+            --exclude "*.pyc" \
+            --exclude "*.db" \
+            --exclude "*.sqlite" \
+            --exclude "hast.db" \
+            --exclude ".env"
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hast-${{ inputs.version }}-source
+          path: hast-${{ inputs.version }}-source.zip
+          retention-days: 30
+
+      # ── Create GitHub Release ─────────────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: HAST ${{ inputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            hast-${{ inputs.version }}-docker-image.tar.gz
+            hast-${{ inputs.version }}-source.zip
+          body: |
+            ## HAST — Hardening & Attack Surface Tester ${{ inputs.version }}
+
+            ### Installation
+
+            **Option 1 — Docker (recommended)**
+            ```bash
+            # Pull from registry
+            docker pull ghcr.io/${{ github.repository_owner }}/hast-scanner:${{ inputs.version }}
+
+            # Or load from the downloaded tar.gz
+            docker load < hast-${{ inputs.version }}-docker-image.tar.gz
+            docker run -p 8765:8765 --cap-add NET_RAW hast-scanner:${{ inputs.version }}
+            ```
+
+            **Option 2 — Source**
+            ```bash
+            unzip hast-${{ inputs.version }}-source.zip
+            cd hast
+            ./start.sh
+            ```
+
+            ### Dashboard
+            Open **http://localhost:8765** after starting.
+
+            ### What's included
+            - Full Docker image with all security tools pre-installed
+            - Source code archive
+
+            ### Tools bundled in Docker image
+            `nmap` · `nuclei` · `katana` · `gospider` · `hakrawler` · `gau` · `ffuf` · `trufflehog` · `gitleaks` · `wafw00f` · `whatweb` · `curl`

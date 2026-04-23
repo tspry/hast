@@ -1,0 +1,32 @@
+services:
+  hast:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hast-scanner:latest
+    container_name: hast
+    ports:
+      - "8765:8765"
+    volumes:
+      # Persist scan database between restarts
+      - hast-data:/data
+      # Bind-mount config so you can edit it without rebuilding
+      - ./config.yaml:/app/config.yaml
+      # Optional: mount a local SecLists install (uncomment + update seclists_path in Config tab)
+      # - /usr/share/seclists:/seclists:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    # nmap needs raw socket access for SYN scanning
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8765/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  hast-data:

@@ -1,0 +1,56 @@
+id: spring-application-yml-exposed
+
+info:
+  name: Spring Boot application.yml/properties Exposed
+  author: hast
+  severity: critical
+  description: |
+    A Spring Boot configuration file is publicly accessible. These files contain
+    database URLs and credentials, JWT secrets, OAuth client secrets, cloud provider
+    keys, mail server passwords, and any value bound via @Value or @ConfigurationProperties.
+  remediation: |
+    Block access to application.yml/.properties via server rules. Use Spring Cloud Config
+    Server or externalize secrets via environment variables or a secrets manager.
+  tags: spring,java,config,exposure,secrets
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/application.yml"
+      - "{{BaseURL}}/application.yaml"
+      - "{{BaseURL}}/application.properties"
+      - "{{BaseURL}}/application-production.yml"
+      - "{{BaseURL}}/application-prod.yml"
+      - "{{BaseURL}}/application-prod.properties"
+      - "{{BaseURL}}/bootstrap.yml"
+      - "{{BaseURL}}/bootstrap.properties"
+
+    stop-at-first-match: true
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "spring:"
+          - "datasource:"
+          - "password:"
+          - "secret:"
+          - "server.port"
+          - "spring.datasource"
+        condition: or
+
+    extractors:
+      - type: regex
+        name: db_password
+        regex:
+          - "password:\s*(.+)"
+          - "spring\\.datasource\\.password=(.+)"
+      - type: regex
+        name: jwt_secret
+        regex:
+          - "secret:\s*(.+)"
+          - "jwt\\.secret=(.+)"
