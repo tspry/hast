@@ -367,6 +367,7 @@ body {
 .tab-actions {
   margin-left: auto;
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 6px 0;
 }
@@ -688,6 +689,8 @@ body {
   padding-left: 8px;
   border-left: 1px solid var(--border);
   margin-left: 2px;
+  align-self: center;
+  line-height: 1;
 }
 .made-by .heart { color: #f85149; }
 
