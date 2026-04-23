@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import os
 import webbrowser
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -19,9 +20,35 @@ from backend.db.database import init_db
 from backend.api.routes import router
 from backend.api.ws_handler import handle_websocket
 
-# ── App setup ─────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="HAST Security Scanner", version="1.0.0")
+# ── Lifespan (replaces deprecated @app.on_event) ──────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    load_config()
+    await init_db()
+    cfg = get_config()
+    print(f"\n  HAST Security Scanner")
+    print(f"  ─────────────────────────────────────")
+    print(f"  Dashboard: http://{cfg['server_host']}:{cfg['server_port']}")
+    print(f"  API:       http://{cfg['server_host']}:{cfg['server_port']}/api")
+    print(f"  ─────────────────────────────────────\n")
+
+    if cfg.get("open_browser", True):
+        asyncio.get_event_loop().call_later(
+            1.5,
+            lambda: webbrowser.open(f"http://{cfg['server_host']}:{cfg['server_port']}"),
+        )
+
+    yield
+
+    # Shutdown
+    from backend.db.database import close_db
+    await close_db()
+
+
+# ── App setup ─────────────────────────────────────────────────────────────────
 
 def _build_cors_origins() -> list[str]:
     defaults = [
@@ -42,6 +69,8 @@ def _build_cors_origins() -> list[str]:
     return defaults + extra
 
 
+app = FastAPI(title="HAST Security Scanner", version="1.0.0", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_build_cors_origins(),
@@ -51,30 +80,6 @@ app.add_middleware(
 )
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
-
-
-@app.on_event("startup")
-async def startup():
-    load_config()
-    await init_db()
-    cfg = get_config()
-    print(f"\n  HAST Security Scanner")
-    print(f"  ─────────────────────────────────────")
-    print(f"  Dashboard: http://{cfg['server_host']}:{cfg['server_port']}")
-    print(f"  API:       http://{cfg['server_host']}:{cfg['server_port']}/api")
-    print(f"  ─────────────────────────────────────\n")
-
-    if cfg.get("open_browser", True):
-        asyncio.get_event_loop().call_later(
-            1.5,
-            lambda: webbrowser.open(f"http://{cfg['server_host']}:{cfg['server_port']}"),
-        )
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    from backend.db.database import close_db
-    await close_db()
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
