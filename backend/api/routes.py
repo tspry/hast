@@ -309,30 +309,32 @@ async def start_bulk_scan(body: dict):
         raise HTTPException(400, "No valid targets provided")
 
     import uuid
-    results = []
+    import asyncio
+
+    # Pre-generate scan IDs so the response and background tasks use the same IDs
+    scan_map = [{"target": t, "scan_id": str(uuid.uuid4())} for t in normalised]
 
     async def _noop_emit(event_type, data):
         pass  # bulk scan has no live WS client — results readable via /api/scans
 
     async def _run_bulk():
-        for target in normalised:
-            scan_id = str(uuid.uuid4())
+        for item in scan_map:
             try:
-                await start_scan(target=target, profile=profile,
-                                 emit=_noop_emit, scan_id=scan_id)
+                sid = await start_scan(
+                    target=item["target"],
+                    profile=profile,
+                    emit=_noop_emit,
+                    scan_id=item["scan_id"],
+                )
+                # Wait for this scan to finish before starting the next
+                while is_scan_running(sid):
+                    await asyncio.sleep(5)
             except Exception:
                 pass
 
-    import asyncio
     asyncio.create_task(_run_bulk())
 
-    # Return scan IDs immediately so the client can poll
-    scan_ids = []
-    import uuid as _uuid
-    for target in normalised:
-        scan_ids.append({"target": target, "scan_id": str(_uuid.uuid4())})
-
-    return {"queued": len(normalised), "profile": profile, "scans": scan_ids}
+    return {"queued": len(normalised), "profile": profile, "scans": scan_map}
 
 
 @router.get("/bulk-scan/summary")

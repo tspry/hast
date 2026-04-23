@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional
 
@@ -62,7 +61,12 @@ class ToolRunner:
         env: Optional[dict] = None,
         timeout: int = 600,
     ) -> AsyncIterator[ToolEvent]:
-        """Run binary with args, yield ToolEvents for each output line."""
+        """Run binary with args, yield ToolEvents for each output line.
+
+        Uses a single async task per stream (stdout/stderr) feeding a shared
+        queue. A deadline cancels both tasks if the total wall-clock time is
+        exceeded, avoiding the broken asyncio.wait-on-queue-get pattern.
+        """
         cmd = [self.path] + args
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -72,84 +76,66 @@ class ToolRunner:
                 cwd=cwd,
                 env=env,
             )
+        except FileNotFoundError:
+            yield ToolEvent(stream="error",
+                            data=f"[{self.name}] binary not found: {self.path}",
+                            tool=self.name)
+            return
+        except Exception as exc:
+            yield ToolEvent(stream="error",
+                            data=f"[{self.name}] failed to start: {exc}",
+                            tool=self.name)
+            return
 
-            async def read_stream(stream, stream_name: str):
-                while True:
-                    try:
-                        line = await asyncio.wait_for(stream.readline(), timeout=30)
-                    except asyncio.TimeoutError:
-                        continue
-                    if not line:
-                        break
-                    yield ToolEvent(stream=stream_name, data=line.decode(errors="replace").rstrip(), tool=self.name)
+        queue: asyncio.Queue = asyncio.Queue()
+        _DONE = object()  # sentinel
 
-            stdout_q: asyncio.Queue = asyncio.Queue()
-            stderr_q: asyncio.Queue = asyncio.Queue()
-
-            async def drain_stdout():
-                async for ev in read_stream(proc.stdout, "stdout"):
-                    await stdout_q.put(ev)
-                await stdout_q.put(None)
-
-            async def drain_stderr():
-                async for ev in read_stream(proc.stderr, "stderr"):
-                    await stderr_q.put(ev)
-                await stderr_q.put(None)
-
-            tasks = [
-                asyncio.create_task(drain_stdout()),
-                asyncio.create_task(drain_stderr()),
-            ]
-
-            stdout_done = stderr_done = False
+        async def _drain(stream, stream_name: str) -> None:
             try:
-                while not (stdout_done and stderr_done):
-                    done, _ = await asyncio.wait(
-                        [asyncio.ensure_future(stdout_q.get()), asyncio.ensure_future(stderr_q.get())],
-                        return_when=asyncio.FIRST_COMPLETED,
-                        timeout=timeout,
-                    )
-                    # drain queues
-                    for item in [stdout_q, stderr_q]:
-                        while not item.empty():
-                            ev = item.get_nowait()
-                            if ev is None:
-                                if item is stdout_q:
-                                    stdout_done = True
-                                else:
-                                    stderr_done = True
-                            else:
-                                yield ev
-            except asyncio.TimeoutError:
-                proc.terminate()
-                yield ToolEvent(stream="warning", data=f"[{self.name}] timed out after {timeout}s", tool=self.name)
+                async for raw_line in stream:
+                    line = raw_line.decode(errors="replace").rstrip()
+                    if line:
+                        await queue.put(ToolEvent(stream=stream_name,
+                                                  data=line, tool=self.name))
+            except Exception:
+                pass
             finally:
-                for t in tasks:
-                    t.cancel()
+                await queue.put(_DONE)
 
+        t_out = asyncio.create_task(_drain(proc.stdout, "stdout"))
+        t_err = asyncio.create_task(_drain(proc.stderr, "stderr"))
+        done_count = 0
+
+        try:
+            deadline = asyncio.get_event_loop().time() + timeout
+            while done_count < 2:
+                remaining = deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    proc.terminate()
+                    yield ToolEvent(stream="warning",
+                                    data=f"[{self.name}] timed out after {timeout}s",
+                                    tool=self.name)
+                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=min(remaining, 5))
+                except asyncio.TimeoutError:
+                    continue
+                if item is _DONE:
+                    done_count += 1
+                else:
+                    yield item
+        finally:
+            t_out.cancel()
+            t_err.cancel()
             try:
                 await asyncio.wait_for(proc.wait(), timeout=10)
             except asyncio.TimeoutError:
                 proc.kill()
+                await proc.wait()
 
-        except FileNotFoundError:
-            yield ToolEvent(stream="error", data=f"[{self.name}] binary not found: {self.path}", tool=self.name)
-        except Exception as exc:
-            yield ToolEvent(stream="error", data=f"[{self.name}] unexpected error: {exc}", tool=self.name)
-
-    async def stream(self, *args, **kwargs) -> AsyncIterator[ToolEvent]:
-        """Override in subclass. Yields ToolEvents and Finding objects."""
-        if not self.available:
-            yield self._unavailable_event()
-            return
-        async for ev in self._run_subprocess(list(args)):
-            yield ev
-
-
-# ── Simple line-by-line runner (used by most tools) ──────────────────────────
 
 class SimpleToolRunner(ToolRunner):
-    """Run tool with given args, stream every line as stdout event."""
+    """Run tool with given args, stream every line as a ToolEvent."""
 
     async def run_raw(self, args: list[str], timeout: int = 600) -> AsyncIterator[ToolEvent]:
         if not self.available:

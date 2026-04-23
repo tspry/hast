@@ -138,8 +138,13 @@ async def scan_js_content_regex(js_url: str, content: str) -> list[Finding]:
 
 async def fetch_js_and_scan(js_url: str, timeout: int = 30) -> tuple[list[Finding], str]:
     """Fetch a JS URL and return (findings, content)."""
+    from backend.config import get_config
+    # verify=False is intentional: we scan targets that may have self-signed or
+    # misconfigured TLS — that's exactly what we're looking for.
+    # Set verify_tls: true in config.yaml to enforce cert validation.
+    verify_tls = get_config().get("verify_tls", False)
     try:
-        async with httpx.AsyncClient(timeout=timeout, verify=False,
+        async with httpx.AsyncClient(timeout=timeout, verify=verify_tls,
                                      follow_redirects=True) as client:
             resp = await client.get(js_url, headers={
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0"

@@ -25,6 +25,7 @@ def load_config() -> dict:
     _config.setdefault("waf_rate_limit_ms", 500)
     _config.setdefault("default_profile", "standard")
     _config.setdefault("respect_robots", True)
+    _config.setdefault("verify_tls", False)
     _config.setdefault("server_host", "127.0.0.1")
     _config.setdefault("server_port", 8765)
     _config.setdefault("open_browser", True)

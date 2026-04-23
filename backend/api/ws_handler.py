@@ -95,6 +95,16 @@ async def handle_websocket(ws: WebSocket):
                 if not target.startswith(("http://", "https://")):
                     target = "https://" + target
 
+                # Basic URL validation — reject non-http schemes and bare IPs
+                from urllib.parse import urlparse
+                parsed = urlparse(target)
+                if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                    await ws.send_text(json.dumps({
+                        "type": "error",
+                        "data": {"message": "Invalid target URL"}
+                    }))
+                    continue
+
                 current_scan_id = await start_scan(
                     target=target,
                     profile=profile,

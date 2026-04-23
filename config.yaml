@@ -8,7 +8,8 @@ user_agents:
   - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   - "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0"
   - "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0"
-respect_robots: true
+respect_robots: true              # not yet enforced — future: skip paths disallowed by robots.txt
+verify_tls: false                 # false = scan targets with self-signed/bad certs (recommended for DAST)
 tool_paths:
   nmap: ""          # empty = auto-detect via PATH
   nuclei: ""
@@ -25,3 +26,4 @@ tool_paths:
 server_host: "127.0.0.1"
 server_port: 8765
 open_browser: true
+allowed_origins: []            # add your proxy URL here, e.g. ["https://hast.internal.company.com"]

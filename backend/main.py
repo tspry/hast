@@ -24,12 +24,31 @@ from backend.api.ws_handler import handle_websocket
 
 app = FastAPI(title="HAST Security Scanner", version="1.0.0")
 
+def _build_cors_origins() -> list[str]:
+    defaults = [
+        "http://localhost:8765",
+        "http://127.0.0.1:8765",
+        "http://0.0.0.0:8765",
+    ]
+    # HAST_ALLOWED_ORIGINS env var takes priority (comma-separated)
+    # e.g. -e HAST_ALLOWED_ORIGINS=https://hast.internal.company.com
+    env_origins = os.environ.get("HAST_ALLOWED_ORIGINS", "")
+    if env_origins:
+        extra = [o.strip().rstrip("/") for o in env_origins.split(",") if o.strip()]
+    else:
+        extra = get_config().get("allowed_origins", [])
+        if isinstance(extra, str):
+            extra = [extra]
+        extra = [o.rstrip("/") for o in extra if o]
+    return defaults + extra
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_build_cors_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type"],
 )
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
