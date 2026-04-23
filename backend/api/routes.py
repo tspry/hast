@@ -1,9 +1,11 @@
 """REST API routes: scan history, findings, export, config."""
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -307,9 +309,6 @@ async def start_bulk_scan(body: dict):
 
     if not normalised:
         raise HTTPException(400, "No valid targets provided")
-
-    import uuid
-    import asyncio
 
     # Pre-generate scan IDs so the response and background tasks use the same IDs
     scan_map = [{"target": t, "scan_id": str(uuid.uuid4())} for t in normalised]

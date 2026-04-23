@@ -4,8 +4,7 @@ Main FastAPI application entry point.
 from __future__ import annotations
 
 import asyncio
-import subprocess
-import sys
+import os
 import webbrowser
 from pathlib import Path
 

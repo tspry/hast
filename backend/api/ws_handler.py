@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -96,7 +97,6 @@ async def handle_websocket(ws: WebSocket):
                     target = "https://" + target
 
                 # Basic URL validation — reject non-http schemes and bare IPs
-                from urllib.parse import urlparse
                 parsed = urlparse(target)
                 if parsed.scheme not in ("http", "https") or not parsed.netloc:
                     await ws.send_text(json.dumps({
