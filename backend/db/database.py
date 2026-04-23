@@ -75,6 +75,16 @@ async def list_scans(limit: int = 50) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+async def delete_scan(scan_id: str) -> bool:
+    db = await get_db()
+    await db.execute("DELETE FROM findings WHERE scan_id = ?", (scan_id,))
+    await db.execute("DELETE FROM discovered_urls WHERE scan_id = ?", (scan_id,))
+    await db.execute("DELETE FROM scan_checkpoints WHERE scan_id = ?", (scan_id,))
+    cur = await db.execute("DELETE FROM scans WHERE id = ?", (scan_id,))
+    await db.commit()
+    return cur.rowcount > 0
+
+
 # ── Finding CRUD ──────────────────────────────────────────────────────────────
 
 async def insert_finding(finding: dict) -> None:

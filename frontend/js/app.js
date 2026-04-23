@@ -557,12 +557,16 @@ const App = (() => {
     menu.innerHTML = scans.map(s => {
       const stats = (() => { try { return JSON.parse(s.stats || '{}'); } catch(_) { return {}; } })();
       const date = (s.started_at || '').slice(0, 16).replace('T', ' ');
-      return `<div class="history-item" onclick="App.loadHistoryScan('${s.id}')">
-        <div class="history-target">${escHtml(s.target)}</div>
-        <div class="history-meta">${date} · ${s.profile} · ${s.status}
-          ${stats.critical ? ` · <span style="color:var(--sev-critical);">${stats.critical}C</span>` : ''}
-          ${stats.high ? ` <span style="color:var(--sev-high);">${stats.high}H</span>` : ''}
+      return `<div class="history-item">
+        <div class="history-item-body" onclick="App.loadHistoryScan('${s.id}')">
+          <div class="history-target">${escHtml(s.target)}</div>
+          <div class="history-meta">${date} · ${s.profile} · ${s.status}
+            ${stats.critical ? ` · <span style="color:var(--sev-critical);">${stats.critical}C</span>` : ''}
+            ${stats.high ? ` <span style="color:var(--sev-high);">${stats.high}H</span>` : ''}
+          </div>
         </div>
+        <button class="history-delete-btn" title="Delete scan"
+          onclick="event.stopPropagation(); App.deleteScan('${s.id}')">✕</button>
       </div>`;
     }).join('');
   }
@@ -575,6 +579,18 @@ const App = (() => {
       loadHistory();
       menu.classList.add('open');
     }
+  }
+
+  async function deleteScan(scanId) {
+    try {
+      const resp = await fetch(`/api/scans/${scanId}`, { method: 'DELETE' });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        alert(err.detail || 'Could not delete scan');
+        return;
+      }
+      loadHistory();
+    } catch (_) {}
   }
 
   async function loadHistoryScan(scanId) {
@@ -859,6 +875,7 @@ const App = (() => {
     filterBySeverity,
     toggleRow,
     toggleHistory,
+    deleteScan,
     loadHistoryScan,
     clearTerminal,
     openBulkScan,

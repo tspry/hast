@@ -36,6 +36,16 @@ async def get_scan(scan_id: str):
     return scan
 
 
+@router.delete("/scans/{scan_id}")
+async def delete_scan_endpoint(scan_id: str):
+    if is_scan_running(scan_id):
+        raise HTTPException(400, "Cannot delete a running scan — stop it first")
+    deleted = await db.delete_scan(scan_id)
+    if not deleted:
+        raise HTTPException(404, "Scan not found")
+    return {"deleted": True, "scan_id": scan_id}
+
+
 @router.post("/scans/{scan_id}/stop")
 async def stop_scan_endpoint(scan_id: str):
     stopped = await stop_scan(scan_id)
