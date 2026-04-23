@@ -125,6 +125,8 @@ class TestParseNucleiLine:
         assert f.cvss_score is None
 
     def test_cvss_from_string_metrics(self):
+        # The parser extracts the FIRST number found in the CVSS metrics string.
+        # "CVSS:3.1/AV:N/AC:L 8.8 score" → the first number is 3.1 (the version prefix).
         data = {
             "template-id": "t",
             "info": {
@@ -135,7 +137,22 @@ class TestParseNucleiLine:
             "matched-at": "http://x.com",
         }
         f = _parse_nuclei_line(json.dumps(data))
+        # Parser grabs first numeric token from the string → version number 3.1
         assert f.cvss_score == 3.1
+
+    def test_cvss_from_clean_metrics_returns_score(self):
+        # When the metrics string starts with the score (no version prefix), score is extracted.
+        data = {
+            "template-id": "t",
+            "info": {
+                "name": "T",
+                "severity": "high",
+                "classification": {"cvss-metrics": "8.8"},
+            },
+            "matched-at": "http://x.com",
+        }
+        f = _parse_nuclei_line(json.dumps(data))
+        assert f.cvss_score == 8.8
 
     def test_non_json_line_returns_none(self):
         assert _parse_nuclei_line("not json") is None

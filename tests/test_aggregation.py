@@ -86,12 +86,14 @@ class TestToFindingDict:
         assert d["risk_score"] == 75
 
     def test_cvss_bonus_added(self):
-        f = self._finding(severity="high", cvss_score=9.0)  # base 75 + bonus 18 = 93
+        # Formula: bonus = int(cvss_score * 2); 9.0 * 2 = 18; base 75 + 18 = 93
+        f = self._finding(severity="high", cvss_score=9.0)
         d = _to_finding_dict(f, "scan-1", set())
         assert d["risk_score"] == 93
 
     def test_risk_score_capped_at_100(self):
-        f = self._finding(severity="critical", cvss_score=10.0)  # base 92 + 20 = 112 → 100
+        # Formula: base 92 (critical) + int(10.0 * 2) = 20 → 112, capped at 100
+        f = self._finding(severity="critical", cvss_score=10.0)
         d = _to_finding_dict(f, "scan-1", set())
         assert d["risk_score"] == 100
 

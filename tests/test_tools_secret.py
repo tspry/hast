@@ -77,10 +77,11 @@ class TestScanJsContentRegex:
 
     @pytest.mark.asyncio
     async def test_skips_placeholder_values(self):
-        # Placeholder-like values should be filtered out
+        # The FP filter checks the matched string itself. The AWS key regex returns the
+        # matched portion only: 'AKIAIOSFODNN7EXAMPLE'. That string contains 'example',
+        # which is in the FP list, so this finding is filtered out.
         content = "const key = 'your_api_key_here_AKIAIOSFODNN7EXAMPLE';"
         findings = await scan_js_content_regex("https://example.com/app.js", content)
-        # The 'your_' prefix should cause this to be skipped
         aws_findings = [f for f in findings if "AWS Access Key" in f.name]
         assert aws_findings == []
 
@@ -101,14 +102,18 @@ class TestScanJsContentRegex:
 
     @pytest.mark.asyncio
     async def test_url_set_on_finding(self):
-        content = "var key = 'AKIAIOSFODNN7EXAMPLE';"
+        # Use a key that does not trigger the FP filter
+        content = "var key = 'AKIAR2Y43MGWTB3XKZNA';"
         findings = await scan_js_content_regex("https://cdn.example.com/bundle.js", content)
+        assert len(findings) >= 1
         assert all(f.url == "https://cdn.example.com/bundle.js" for f in findings)
 
     @pytest.mark.asyncio
     async def test_tool_is_regex_secret_scan(self):
-        content = "var key = 'AKIAIOSFODNN7EXAMPLE';"
+        # Use a key that does not trigger the FP filter
+        content = "var key = 'AKIAR2Y43MGWTB3XKZNA';"
         findings = await scan_js_content_regex("https://example.com/app.js", content)
+        assert len(findings) >= 1
         assert all(f.tool == "regex-secret-scan" for f in findings)
 
     @pytest.mark.asyncio
@@ -208,7 +213,7 @@ class TestParseTrufflehogLine:
             "SourceMetadata": {"Data": {"Git": {"file": "https://github.com/org/repo/blob/main/secret.py"}}},
         })
         f = _parse_trufflehog_line(line)
-        assert "github.com" in f.url
+        assert f.url == "https://github.com/org/repo/blob/main/secret.py"
 
     def test_raw_field_truncated_at_200(self):
         raw = "x" * 300
