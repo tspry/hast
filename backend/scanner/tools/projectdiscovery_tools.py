@@ -172,7 +172,7 @@ class TlsxTool(SimpleToolRunner):
         from urllib.parse import urlparse
         parsed = urlparse(target)
         host = parsed.netloc or parsed.path
-        args = ["-u", host, "-json", "-silent", "-expired", "-self-signed", "-mismatched", "-ro"]
+        args = ["-u", host, "-json", "-silent", "-expired", "-self-signed", "-mismatched"]
         async for ev in self.run_raw(args, timeout=60):
             yield ev
             if ev.stream == "stdout":

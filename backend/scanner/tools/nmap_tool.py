@@ -52,6 +52,10 @@ def _parse_nmap_xml(xml_text: str, target: str) -> list[Finding]:
         return findings
 
     for host in root.findall("host"):
+        # Extract IP address string from the XML element
+        addr_el = host.find("address[@addrtype='ipv4']") or host.find("address")
+        host_addr = addr_el.get("addr", "") if addr_el is not None else ""
+
         for port_el in host.findall(".//port"):
             state = port_el.find("state")
             if state is None or state.get("state") != "open":
@@ -98,7 +102,7 @@ def _parse_nmap_xml(xml_text: str, target: str) -> list[Finding]:
                     evidence=f"Port {portid}/{proto} open — {full_svc or svc_name}",
                     remediation=remediation,
                     raw={
-                        "host": host,
+                        "host": host_addr,
                         "port": portid,
                         "protocol": proto,
                         "service": svc_name,
