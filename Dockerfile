@@ -45,23 +45,14 @@ RUN set -eux \
  && unzip -qjo katana.zip katana -d . && chmod +x katana && rm katana.zip \
  || echo "[warn] katana download failed" \
  \
+ && GSPARCH=$([ "$ARCH" = "amd64" ] && echo "x86_64" || echo "$ARCH") \
  && VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${ARCH}.zip" \
+ && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_${VER}_linux_${GSPARCH}.zip" \
          -o gospider.zip \
  && unzip -qjo gospider.zip -d . && test -f gospider && chmod +x gospider && rm gospider.zip \
  || echo "[warn] gospider download failed" \
- \
- && VER=$(curl -sf https://api.github.com/repos/hakluke/hakrawler/releases/latest \
-          | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && test -n "$VER" \
- && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${ARCH}.tar.gz" \
-         -o hakrawler.tar.gz \
- && tar -xzf hakrawler.tar.gz --strip-components=0 --wildcards '*/hakrawler' 2>/dev/null \
-    || tar -xzf hakrawler.tar.gz hakrawler \
- && chmod +x hakrawler && rm hakrawler.tar.gz \
- || echo "[warn] hakrawler download failed" \
  \
  && VER=$(curl -sf https://api.github.com/repos/lc/gau/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
@@ -95,6 +86,12 @@ RUN set -eux \
          -o gitleaks.tar.gz \
  && tar -xzf gitleaks.tar.gz gitleaks && chmod +x gitleaks && rm gitleaks.tar.gz \
  || echo "[warn] gitleaks download failed"
+
+# hakrawler has no pre-built binary releases (project abandoned pre-built dist since 2022);
+# build from source using the Go toolchain already present in this stage.
+RUN go install github.com/hakluke/hakrawler@latest \
+ && cp /go/bin/hakrawler /tools/hakrawler \
+ || echo "[warn] hakrawler build failed"
 
 # Ensure /tools/ always has at least one file so COPY doesn't fail
 RUN touch /tools/.keep

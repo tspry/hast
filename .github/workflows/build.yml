@@ -16,6 +16,9 @@ on:
 env:
   IMAGE_NAME: hast-scanner
   REGISTRY: ghcr.io
+  # Opt in to Node.js 24 for all actions ahead of the June 2026 forced migration.
+  # Remove once all action versions ship their own Node.js 24 runtime.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── Build each arch separately so cache scopes never collide ──────────────────
