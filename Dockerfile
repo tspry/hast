@@ -24,7 +24,6 @@ RUN set -eux \
  && mkdir -p /root/pd-tools \
  && HOME=/root pdtm \
       -i nuclei \
-      -i katana \
       -i subfinder \
       -i dnsx \
       -i httpx \
@@ -39,22 +38,35 @@ RUN set -eux \
  && find /root/pd-tools -maxdepth 1 -type f -perm -111 -exec cp {} /tools/ \; \
  || echo "[warn] pdtm selective install failed" \
  \
+ && VER=$(curl -sf https://api.github.com/repos/projectdiscovery/katana/releases/latest \
+          | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+ && test -n "$VER" \
+ && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${GOARCH}.zip" \
+         -o katana.zip \
+ && unzip -qjo katana.zip katana -d . && chmod +x katana && rm katana.zip \
+ || echo "[warn] katana download failed" \
+ \
  && VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+ && test -n "$VER" \
  && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${GOARCH}.zip" \
          -o gospider.zip \
- && unzip -qj gospider.zip "*/gospider" -d . && chmod +x gospider && rm gospider.zip \
+ && unzip -qjo gospider.zip -d . && test -f gospider && chmod +x gospider && rm gospider.zip \
  || echo "[warn] gospider download failed" \
  \
  && VER=$(curl -sf https://api.github.com/repos/hakluke/hakrawler/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+ && test -n "$VER" \
  && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${GOARCH}.tar.gz" \
          -o hakrawler.tar.gz \
- && tar -xzf hakrawler.tar.gz hakrawler && chmod +x hakrawler && rm hakrawler.tar.gz \
+ && tar -xzf hakrawler.tar.gz --strip-components=0 --wildcards '*/hakrawler' 2>/dev/null \
+    || tar -xzf hakrawler.tar.gz hakrawler \
+ && chmod +x hakrawler && rm hakrawler.tar.gz \
  || echo "[warn] hakrawler download failed" \
  \
  && VER=$(curl -sf https://api.github.com/repos/lc/gau/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+ && test -n "$VER" \
  && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_${GOARCH}.tar.gz" \
          -o gau.tar.gz \
  && tar -xzf gau.tar.gz gau && chmod +x gau && rm gau.tar.gz \
@@ -62,6 +74,7 @@ RUN set -eux \
  \
  && VER=$(curl -sf https://api.github.com/repos/ffuf/ffuf/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+ && test -n "$VER" \
  && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_${GOARCH}.tar.gz" \
          -o ffuf.tar.gz \
  && tar -xzf ffuf.tar.gz ffuf && chmod +x ffuf && rm ffuf.tar.gz \
@@ -69,6 +82,7 @@ RUN set -eux \
  \
  && VER=$(curl -sf https://api.github.com/repos/trufflesecurity/trufflehog/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+ && test -n "$VER" \
  && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_${GOARCH}.tar.gz" \
          -o trufflehog.tar.gz \
  && tar -xzf trufflehog.tar.gz trufflehog && chmod +x trufflehog && rm trufflehog.tar.gz \
@@ -77,6 +91,7 @@ RUN set -eux \
  && GLARCH=$([ "$GOARCH" = "amd64" ] && echo "x64" || echo "$GOARCH") \
  && VER=$(curl -sf https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+ && test -n "$VER" \
  && curl -sfL "https://github.com/gitleaks/gitleaks/releases/download/${VER}/gitleaks_${VER#v}_linux_${GLARCH}.tar.gz" \
          -o gitleaks.tar.gz \
  && tar -xzf gitleaks.tar.gz gitleaks && chmod +x gitleaks && rm gitleaks.tar.gz \
