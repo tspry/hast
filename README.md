@@ -52,8 +52,8 @@ Built for local use. No cloud, no accounts, no data leaves your machine.
 ## Scan Workflow
 
 ```
-Phase 1 — Recon       wafw00f → nmap -sV → whatweb
-Phase 2 — Discovery   katana + gospider + hakrawler (parallel) → gau → dedup
+Phase 1 — Recon       wafw00f → subfinder → dnsx → naabu → nmap -sV → whatweb
+Phase 2 — Discovery   httpx → katana + gospider + hakrawler (parallel) → gau → dedup
 Phase 3 — Scanning    nuclei (all discovered URLs) → ffuf (path bruteforce)
                        → JS secret scan (regex + gitleaks on every JS file)
 Phase 4 — Aggregation dedup by (url, name) → risk scoring → diff vs last scan → SQLite
@@ -71,6 +71,10 @@ HAST wraps these tools. Each is detected automatically from `PATH`. Missing tool
 | Tool | Purpose |
 |---|---|
 | `nmap` | Port scanning, service fingerprinting |
+| `subfinder` | Subdomain discovery |
+| `dnsx` | DNS resolution of discovered hosts |
+| `naabu` | Fast port discovery on resolved hosts |
+| `httpx` | Live HTTP probing and URL validation |
 | `nuclei` | Main vulnerability and exposure scanner |
 | `katana` | Primary crawler (depth 3) |
 | `gospider` | Parallel crawler (standard + deep profiles) |

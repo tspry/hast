@@ -1,6 +1,7 @@
 """HAST – Security Hardening Scanner Dashboard
 Main FastAPI application entry point.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -15,13 +16,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.config import load_config, get_config
-from backend.db.database import init_db
 from backend.api.routes import router
 from backend.api.ws_handler import handle_websocket
-
+from backend.config import get_config, load_config
+from backend.db.database import init_db
 
 # ── Lifespan (replaces deprecated @app.on_event) ──────────────────────────────
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,26 +30,30 @@ async def lifespan(app: FastAPI):
     load_config()
     await init_db()
     cfg = get_config()
-    print(f"\n  HAST Security Scanner")
-    print(f"  ─────────────────────────────────────")
+    print("\n  HAST Security Scanner")
+    print("  ─────────────────────────────────────")
     print(f"  Dashboard: http://{cfg['server_host']}:{cfg['server_port']}")
     print(f"  API:       http://{cfg['server_host']}:{cfg['server_port']}/api")
-    print(f"  ─────────────────────────────────────\n")
+    print("  ─────────────────────────────────────\n")
 
     if cfg.get("open_browser", True):
         asyncio.get_event_loop().call_later(
             1.5,
-            lambda: webbrowser.open(f"http://{cfg['server_host']}:{cfg['server_port']}"),
+            lambda: webbrowser.open(
+                f"http://{cfg['server_host']}:{cfg['server_port']}"
+            ),
         )
 
     yield
 
     # Shutdown
     from backend.db.database import close_db
+
     await close_db()
 
 
 # ── App setup ─────────────────────────────────────────────────────────────────
+
 
 def _build_cors_origins() -> list[str]:
     defaults = [
@@ -80,6 +85,7 @@ app.add_middleware(
 )
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+FRONTEND_ROOT = FRONTEND_DIR.resolve()
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -103,13 +109,18 @@ if FRONTEND_DIR.is_dir():
 
     @app.get("/{path:path}")
     async def serve_static(path: str):
-        target = FRONTEND_DIR / path
+        target = (FRONTEND_DIR / path).resolve()
+        try:
+            target.relative_to(FRONTEND_ROOT)
+        except ValueError:
+            return FileResponse(str(FRONTEND_DIR / "index.html"))
         if target.is_file():
             return FileResponse(str(target))
         return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+
 
 def main():
     load_config()

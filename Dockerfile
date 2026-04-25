@@ -1,9 +1,11 @@
-# ── Stage 1: Download Go-based security tools ─────────────────────────────────
-FROM debian:bookworm-slim AS tool-downloader
+# ── Stage 1: Download security tools ─────────────────────────────────────────
+FROM golang:1.24-bookworm AS tool-downloader
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates unzip tar \
  && rm -rf /var/lib/apt/lists/*
+
+RUN go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
 
 WORKDIR /tools
 
@@ -19,19 +21,8 @@ RUN set -eux \
     esac \
  && echo "==> Detected arch: $GOARCH (uname -m: $UNAME)" \
  \
- && VER=$(curl -sf https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
-          | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/projectdiscovery/nuclei/releases/download/${VER}/nuclei_${VER#v}_linux_${GOARCH}.zip" \
-         -o nuclei.zip \
- && unzip -q nuclei.zip nuclei && chmod +x nuclei && rm nuclei.zip \
- || echo "[warn] nuclei download failed" \
- \
- && VER=$(curl -sf https://api.github.com/repos/projectdiscovery/katana/releases/latest \
-          | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
- && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${GOARCH}.zip" \
-         -o katana.zip \
- && unzip -q katana.zip katana && chmod +x katana && rm katana.zip \
- || echo "[warn] katana download failed" \
+ && pdtm -ia -bp /tools \
+ || echo "[warn] pdtm install-all failed" \
  \
  && VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
@@ -101,20 +92,12 @@ RUN setcap cap_net_raw+ep /usr/bin/nmap
 # Create non-root user hero
 RUN groupadd -r hero && useradd -r -g hero -m -d /home/hero -s /bin/sh hero
 
-# wafw00f via pip
-RUN pip install --no-cache-dir wafw00f
+# wafw00f via pip; install requests explicitly to avoid broken dependency resolution
+RUN pip install --no-cache-dir requests wafw00f
 
 # Copy Go binaries from stage 1 — use a script so missing ones are silently skipped
 COPY --from=tool-downloader /tools/ /tmp/go-tools/
-RUN for bin in nuclei katana gospider hakrawler gau ffuf trufflehog gitleaks; do \
-      src="/tmp/go-tools/$bin"; \
-      if [ -f "$src" ] && [ -x "$src" ]; then \
-        cp "$src" /usr/local/bin/$bin; \
-        echo "[ok] installed $bin"; \
-      else \
-        echo "[skip] $bin not available"; \
-      fi; \
-    done \
+RUN find /tmp/go-tools -maxdepth 1 -type f -perm -111 -exec cp {} /usr/local/bin/ \; \
  && rm -rf /tmp/go-tools
 
 # Pull nuclei-templates (best-effort; configurable at runtime)

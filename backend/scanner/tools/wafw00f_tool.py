@@ -1,4 +1,5 @@
 """wafw00f – WAF detection."""
+
 from __future__ import annotations
 
 import re
@@ -19,7 +20,7 @@ class Wafw00fTool(SimpleToolRunner):
         waf_name = None
         waf_detected = False
 
-        async for ev in self.run_raw([target, "-a", "--format", "json"], timeout=120):
+        async for ev in self.run_raw([target, "-a"], timeout=120):
             yield ev
             line = ev.data.lower()
             # Parse plain text output as well

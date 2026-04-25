@@ -1,4 +1,5 @@
 """nuclei – vulnerability and exposure scanner."""
+
 from __future__ import annotations
 
 import json
@@ -72,15 +73,21 @@ class NucleiTool(SimpleToolRunner):
         templates_path = cfg.get("nuclei_templates_path", "")
 
         # Build URL list file
-        import tempfile, os
+        import os
+        import tempfile
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tf:
             tf.write("\n".join(urls))
             url_file = tf.name
 
         try:
             args = self._build_args(
-                url_file, templates_path, extra_tags or [],
-                rate_limit, headless, custom_templates or []
+                url_file,
+                templates_path,
+                extra_tags or [],
+                rate_limit,
+                headless,
+                custom_templates or [],
             )
             async for ev in self.run_raw(args, timeout=1800):
                 yield ev
@@ -104,13 +111,18 @@ class NucleiTool(SimpleToolRunner):
         custom_templates: list[str],
     ) -> list[str]:
         args = [
-            "-l", url_file,
-            "-json",
+            "-l",
+            url_file,
+            "-jsonl",
             "-silent",
-            "-rate-limit", str(max(1, 1000 // max(rate_limit, 1))),
-            "-severity", "low,medium,high,critical,info",
-            "-retries", "1",
-            "-timeout", "10",
+            "-rate-limit",
+            str(max(1, 1000 // max(rate_limit, 1))),
+            "-severity",
+            "low,medium,high,critical,info",
+            "-retries",
+            "1",
+            "-timeout",
+            "10",
         ]
 
         # ── Community templates ────────────────────────────────────────────────
@@ -123,7 +135,9 @@ class NucleiTool(SimpleToolRunner):
         args += ["-tags", ",".join(all_tags)]
 
         # ── HAST custom templates (always included) ────────────────────────────
-        hast_templates = Path(__file__).parent.parent.parent.parent / "nuclei-templates" / "hast"
+        hast_templates = (
+            Path(__file__).parent.parent.parent.parent / "nuclei-templates" / "hast"
+        )
         if hast_templates.is_dir():
             args += ["-t", str(hast_templates)]
 
@@ -178,7 +192,8 @@ def _parse_nuclei_line(line: str) -> Optional[Finding]:
         if cvss and not isinstance(cvss, (int, float)):
             # Extract first number from CVSS string
             import re
-            m = re.search(r'(\d+\.?\d*)', str(cvss))
+
+            m = re.search(r"(\d+\.?\d*)", str(cvss))
             cvss = float(m.group(1)) if m else None
 
     return Finding(

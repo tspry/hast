@@ -1,0 +1,45 @@
+.git
+.github
+.claude
+.vscode
+AGENTS.md
+CLAUDE.md
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Test and coverage output
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local runtime data and overrides
+hast.db
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.local
+config.local.yaml
+config.override.yaml
+
+# Logs
+*.log
+logs/
+
+# Repo docs are not needed in the container image
+docs/
+
+# Common editor and OS files
+.DS_Store
+Thumbs.db

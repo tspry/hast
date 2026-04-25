@@ -1,7 +1,7 @@
 """nmap – port/service scanning with XML output parsing."""
+
 from __future__ import annotations
 
-import re
 import xml.etree.ElementTree as ET
 from typing import AsyncIterator
 from urllib.parse import urlparse
@@ -22,8 +22,7 @@ class NmapTool(SimpleToolRunner):
         xml_lines: list[str] = []
         collecting_xml = False
 
-        args = ["-sV", "--open", "-T4", "--script=banner,http-title",
-                "-oX", "-", host]
+        args = ["-sV", "--open", "-T4", "--script=banner,http-title", "-oX", "-", host]
 
         async for ev in self.run_raw(args, timeout=300):
             if ev.stream == "stdout":
@@ -71,22 +70,42 @@ def _parse_nmap_xml(xml_text: str, target: str) -> list[Finding]:
             if portid in ("21", "23", "3389", "5900"):
                 severity = "high"
                 remediation = "This protocol transmits credentials in plaintext or is high-risk. Disable or restrict access."
-            elif portid in ("445", "139", "3306", "5432", "1433", "6379", "27017", "9200", "11211"):
+            elif portid in (
+                "445",
+                "139",
+                "3306",
+                "5432",
+                "1433",
+                "6379",
+                "27017",
+                "9200",
+                "11211",
+            ):
                 severity = "medium"
                 remediation = "Database/internal service exposed. Restrict with firewall rules or VPN."
             elif svc_name in ("http", "https"):
                 severity = "info"
-                remediation = "Web service port — will be included in nuclei scan targets."
+                remediation = (
+                    "Web service port — will be included in nuclei scan targets."
+                )
 
-            findings.append(Finding(
-                tool="nmap",
-                severity=severity,
-                name=f"Open Port: {portid}/{proto} ({svc_name})",
-                url=f"{target}:{portid}",
-                evidence=f"Port {portid}/{proto} open — {full_svc or svc_name}",
-                remediation=remediation,
-                raw={"port": portid, "protocol": proto, "service": svc_name, "version": full_svc},
-            ))
+            findings.append(
+                Finding(
+                    tool="nmap",
+                    severity=severity,
+                    name=f"Open Port: {portid}/{proto} ({svc_name})",
+                    url=f"{target}:{portid}",
+                    evidence=f"Port {portid}/{proto} open — {full_svc or svc_name}",
+                    remediation=remediation,
+                    raw={
+                        "host": host,
+                        "port": portid,
+                        "protocol": proto,
+                        "service": svc_name,
+                        "version": full_svc,
+                    },
+                )
+            )
     return findings
 
 
@@ -102,13 +121,22 @@ def _parse_ports(xml_text: str) -> list[dict]:
             if state is None or state.get("state") != "open":
                 continue
             svc = port_el.find("service")
-            ports.append({
-                "port": port_el.get("portid"),
-                "protocol": port_el.get("protocol", "tcp"),
-                "service": svc.get("name", "unknown") if svc is not None else "unknown",
-                "version": " ".join(filter(None, [
-                    svc.get("product", "") if svc is not None else "",
-                    svc.get("version", "") if svc is not None else "",
-                ])),
-            })
+            ports.append(
+                {
+                    "port": port_el.get("portid"),
+                    "protocol": port_el.get("protocol", "tcp"),
+                    "service": (
+                        svc.get("name", "unknown") if svc is not None else "unknown"
+                    ),
+                    "version": " ".join(
+                        filter(
+                            None,
+                            [
+                                svc.get("product", "") if svc is not None else "",
+                                svc.get("version", "") if svc is not None else "",
+                            ],
+                        )
+                    ),
+                }
+            )
     return ports
