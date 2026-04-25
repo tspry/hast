@@ -1,8 +1,5 @@
 # ── Stage 1: Download security tools ─────────────────────────────────────────
-# TARGETARCH is set automatically by Docker BuildKit to amd64 / arm64 / arm
-ARG TARGETARCH=amd64
 FROM golang:1.24-bookworm AS tool-downloader
-ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates unzip tar \
@@ -12,8 +9,16 @@ RUN go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
 
 WORKDIR /tools
 
+# Detect arch from uname -m — reliable on all platforms including Raspberry Pi
 RUN set -eux \
- && echo "==> Building for arch: ${TARGETARCH}" \
+ && UNAME=$(uname -m) \
+ && case "$UNAME" in \
+      x86_64)        ARCH=amd64 ;; \
+      aarch64|arm64) ARCH=arm64 ;; \
+      armv7l|armv6l) ARCH=arm   ;; \
+      *)             echo "[warn] Unknown arch $UNAME, defaulting to amd64"; ARCH=amd64 ;; \
+    esac \
+ && echo "==> Detected arch: $ARCH (uname -m: $UNAME)" \
  \
  && mkdir -p /root/pd-tools \
  && HOME=/root pdtm \
@@ -35,7 +40,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/projectdiscovery/katana/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${TARGETARCH}.zip" \
+ && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${ARCH}.zip" \
          -o katana.zip \
  && unzip -qjo katana.zip katana -d . && chmod +x katana && rm katana.zip \
  || echo "[warn] katana download failed" \
@@ -43,7 +48,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${TARGETARCH}.zip" \
+ && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${ARCH}.zip" \
          -o gospider.zip \
  && unzip -qjo gospider.zip -d . && test -f gospider && chmod +x gospider && rm gospider.zip \
  || echo "[warn] gospider download failed" \
@@ -51,7 +56,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/hakluke/hakrawler/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${TARGETARCH}.tar.gz" \
+ && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${ARCH}.tar.gz" \
          -o hakrawler.tar.gz \
  && tar -xzf hakrawler.tar.gz --strip-components=0 --wildcards '*/hakrawler' 2>/dev/null \
     || tar -xzf hakrawler.tar.gz hakrawler \
@@ -61,7 +66,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/lc/gau/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_${TARGETARCH}.tar.gz" \
+ && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_${ARCH}.tar.gz" \
          -o gau.tar.gz \
  && tar -xzf gau.tar.gz gau && chmod +x gau && rm gau.tar.gz \
  || echo "[warn] gau download failed" \
@@ -69,7 +74,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/ffuf/ffuf/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_${TARGETARCH}.tar.gz" \
+ && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_${ARCH}.tar.gz" \
          -o ffuf.tar.gz \
  && tar -xzf ffuf.tar.gz ffuf && chmod +x ffuf && rm ffuf.tar.gz \
  || echo "[warn] ffuf download failed" \
@@ -77,12 +82,12 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/trufflesecurity/trufflehog/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_${TARGETARCH}.tar.gz" \
+ && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_${ARCH}.tar.gz" \
          -o trufflehog.tar.gz \
  && tar -xzf trufflehog.tar.gz trufflehog && chmod +x trufflehog && rm trufflehog.tar.gz \
  || echo "[warn] trufflehog download failed" \
  \
- && GLARCH=$([ "${TARGETARCH}" = "amd64" ] && echo "x64" || echo "${TARGETARCH}") \
+ && GLARCH=$([ "$ARCH" = "amd64" ] && echo "x64" || echo "$ARCH") \
  && VER=$(curl -sf https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
