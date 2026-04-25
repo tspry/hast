@@ -167,16 +167,6 @@ async def run_discovery(
                 {"tool": "subfinder", "status": "done", "message": "0 subdomains"},
             )
 
-    # Emit subdomains discovered event for live UI update
-    subdomain_list = [
-        {"host": h, "ip": subdomain_ips.get(h, "")}
-        for h in sorted(subdomains)
-    ]
-    await emit("subdomains_found", {
-        "subdomains": subdomain_list,
-        "count": len(subdomain_list),
-    })
-
     # ── dnsx ────────────────────────────────────────────────────────────────
     dns_inputs_set = set(subdomains)
     if target_host:
@@ -228,6 +218,16 @@ async def run_discovery(
 
     if not resolved_hosts and target_host:
         resolved_hosts.add(target_host)
+
+    # Emit subdomains_found now — after dnsx so IPs are populated
+    subdomain_list = [
+        {"host": h, "ip": subdomain_ips.get(h, "")}
+        for h in sorted(subdomains)
+    ]
+    await emit("subdomains_found", {
+        "subdomains": subdomain_list,
+        "count": len(subdomain_list),
+    })
 
     # ── alterx + shuffledns (deep only) ──────────────────────────────────────
     if profile == "deep" and subdomains:
