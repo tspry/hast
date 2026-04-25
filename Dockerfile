@@ -1,5 +1,8 @@
 # ── Stage 1: Download security tools ─────────────────────────────────────────
+# TARGETARCH is set automatically by Docker BuildKit to amd64 / arm64 / arm
+ARG TARGETARCH=amd64
 FROM golang:1.24-bookworm AS tool-downloader
+ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates unzip tar \
@@ -9,17 +12,8 @@ RUN go install -v github.com/projectdiscovery/pdtm/cmd/pdtm@latest
 
 WORKDIR /tools
 
-# Detect arch from uname -m at build time — works on every Docker version
-# and every platform without relying on BuildKit ARG injection.
 RUN set -eux \
- && UNAME=$(uname -m) \
- && case "$UNAME" in \
-      x86_64)        GOARCH=amd64 ;; \
-      aarch64|arm64) GOARCH=arm64 ;; \
-      armv7l)        GOARCH=arm_7 ;; \
-      *)             echo "[warn] Unknown arch $UNAME, defaulting to amd64"; GOARCH=amd64 ;; \
-    esac \
- && echo "==> Detected arch: $GOARCH (uname -m: $UNAME)" \
+ && echo "==> Building for arch: ${TARGETARCH}" \
  \
  && mkdir -p /root/pd-tools \
  && HOME=/root pdtm \
@@ -41,7 +35,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/projectdiscovery/katana/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${GOARCH}.zip" \
+ && curl -sfL "https://github.com/projectdiscovery/katana/releases/download/${VER}/katana_${VER#v}_linux_${TARGETARCH}.zip" \
          -o katana.zip \
  && unzip -qjo katana.zip katana -d . && chmod +x katana && rm katana.zip \
  || echo "[warn] katana download failed" \
@@ -49,7 +43,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${GOARCH}.zip" \
+ && curl -sfL "https://github.com/jaeles-project/gospider/releases/download/${VER}/gospider_linux_${TARGETARCH}.zip" \
          -o gospider.zip \
  && unzip -qjo gospider.zip -d . && test -f gospider && chmod +x gospider && rm gospider.zip \
  || echo "[warn] gospider download failed" \
@@ -57,7 +51,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/hakluke/hakrawler/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${GOARCH}.tar.gz" \
+ && curl -sfL "https://github.com/hakluke/hakrawler/releases/download/${VER}/hakrawler_${VER#v}_linux_${TARGETARCH}.tar.gz" \
          -o hakrawler.tar.gz \
  && tar -xzf hakrawler.tar.gz --strip-components=0 --wildcards '*/hakrawler' 2>/dev/null \
     || tar -xzf hakrawler.tar.gz hakrawler \
@@ -67,7 +61,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/lc/gau/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_${GOARCH}.tar.gz" \
+ && curl -sfL "https://github.com/lc/gau/releases/download/${VER}/gau_${VER#v}_linux_${TARGETARCH}.tar.gz" \
          -o gau.tar.gz \
  && tar -xzf gau.tar.gz gau && chmod +x gau && rm gau.tar.gz \
  || echo "[warn] gau download failed" \
@@ -75,7 +69,7 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/ffuf/ffuf/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_${GOARCH}.tar.gz" \
+ && curl -sfL "https://github.com/ffuf/ffuf/releases/download/${VER}/ffuf_${VER#v}_linux_${TARGETARCH}.tar.gz" \
          -o ffuf.tar.gz \
  && tar -xzf ffuf.tar.gz ffuf && chmod +x ffuf && rm ffuf.tar.gz \
  || echo "[warn] ffuf download failed" \
@@ -83,12 +77,12 @@ RUN set -eux \
  && VER=$(curl -sf https://api.github.com/repos/trufflesecurity/trufflehog/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
- && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_${GOARCH}.tar.gz" \
+ && curl -sfL "https://github.com/trufflesecurity/trufflehog/releases/download/${VER}/trufflehog_${VER#v}_linux_${TARGETARCH}.tar.gz" \
          -o trufflehog.tar.gz \
  && tar -xzf trufflehog.tar.gz trufflehog && chmod +x trufflehog && rm trufflehog.tar.gz \
  || echo "[warn] trufflehog download failed" \
  \
- && GLARCH=$([ "$GOARCH" = "amd64" ] && echo "x64" || echo "$GOARCH") \
+ && GLARCH=$([ "${TARGETARCH}" = "amd64" ] && echo "x64" || echo "${TARGETARCH}") \
  && VER=$(curl -sf https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
  && test -n "$VER" \
@@ -136,7 +130,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Always copy HAST custom templates (separate from community nuclei-templates)
-RUN cp -r /app/nuclei-templates/hast /nuclei-templates/hast 2>/dev/null || true
+RUN mkdir -p /nuclei-templates \
+ && cp -r /app/nuclei-templates/hast /nuclei-templates/hast 2>/dev/null || true
 
 # Patch defaults for container: bind to all interfaces, no browser launch
 RUN python3 - <<'EOF'
@@ -145,8 +140,9 @@ with open("config.yaml") as f:
     cfg = yaml.safe_load(f) or {}
 cfg["server_host"] = "0.0.0.0"
 cfg["open_browser"] = False
-if not cfg.get("nuclei_templates_path"):
-    cfg["nuclei_templates_path"] = "/nuclei-templates"
+# Leave nuclei_templates_path empty — auto-detect finds ~/.local/nuclei-templates
+# Users can override in the Config tab or by mounting a volume at that path
+cfg["nuclei_templates_path"] = ""
 with open("config.yaml", "w") as f:
     yaml.dump(cfg, f)
 EOF
@@ -159,7 +155,7 @@ VOLUME ["/data"]
 ENV HAST_DB_PATH=/data/hast.db
 
 # Set ownership so hero can write to app dirs and the data volume
-RUN mkdir -p /data /nuclei-templates \
+RUN mkdir -p /data \
  && chown -R hero:hero /app /nuclei-templates /data
 
 # Drop to non-root user
