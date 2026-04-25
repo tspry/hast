@@ -19,6 +19,7 @@ async def run_recon(
     target: str,
     emit: Callable,
     scan_id: str,
+    parallel: bool = False,
 ) -> dict:
     """
     Run Phase 1. Returns dict with:
@@ -40,7 +41,7 @@ async def run_recon(
 
     await emit("phase_update", {"phase": "recon", "status": "running"})
 
-    # ── wafw00f ──────────────────────────────────────────────────────────────
+    # ── wafw00f — always sequential first (result affects rate limits) ─────────
     await emit("tool_status", {"tool": "wafw00f", "status": "running"})
     wafw00f = Wafw00fTool()
     if not wafw00f.available:
@@ -65,6 +66,27 @@ async def run_recon(
             if result["waf_detected"] else "No WAF detected"
         ),
     })
+
+    # ── Remaining recon tools (cdncheck, nmap, asnmap, tlsx, whatweb) ─────────
+    if parallel:
+        await _run_parallel(target, emit, result)
+    else:
+        await _run_sequential(target, emit, result)
+
+    await emit("phase_update", {"phase": "recon", "status": "completed",
+                                "data": {
+                                    "waf_detected": result["waf_detected"],
+                                    "waf_name": result["waf_name"],
+                                    "cdn_detected": result["cdn_detected"],
+                                    "cdn_name": result["cdn_name"],
+                                    "ports_count": len(result["open_ports"]),
+                                    "tech_count": len(result["technologies"]),
+                                }})
+    return result
+
+
+async def _run_sequential(target: str, emit: Callable, result: dict) -> None:
+    """Run cdncheck → nmap → asnmap → tlsx → whatweb sequentially."""
 
     # ── cdncheck ──────────────────────────────────────────────────────────────
     await emit("tool_status", {"tool": "cdncheck", "status": "running"})
@@ -92,14 +114,12 @@ async def run_recon(
         await emit("tool_status", {"tool": "nmap", "status": "skipped",
                                    "message": "nmap not found"})
     else:
-        xml_lines = []
         async for item in nmap.run(target):
             if isinstance(item, Finding):
                 result["findings"].append(item)
                 if "open port" in item.name.lower():
-                    port_info = item.raw
-                    if port_info:
-                        result["open_ports"].append(port_info)
+                    if item.raw:
+                        result["open_ports"].append(item.raw)
             else:
                 await emit("log", {"tool": "nmap", "stream": item.stream, "data": item.data})
         await emit("tool_status", {"tool": "nmap", "status": "done"})
@@ -153,16 +173,50 @@ async def run_recon(
                 await emit("log", {"tool": "whatweb", "stream": item.stream, "data": item.data})
         await emit("tool_status", {"tool": "whatweb", "status": "done"})
 
-    await emit("phase_update", {"phase": "recon", "status": "completed",
-                                "data": {
-                                    "waf_detected": result["waf_detected"],
-                                    "waf_name": result["waf_name"],
-                                    "cdn_detected": result["cdn_detected"],
-                                    "cdn_name": result["cdn_name"],
-                                    "ports_count": len(result["open_ports"]),
-                                    "tech_count": len(result["technologies"]),
-                                }})
-    return result
+
+async def _run_parallel(target: str, emit: Callable, result: dict) -> None:
+    """Run cdncheck, nmap, asnmap, tlsx, whatweb concurrently (max 3 at once)."""
+    sem = asyncio.Semaphore(3)
+
+    async def _pdrain(tool_name: str, gen) -> list[Finding]:
+        """Drain a tool generator under the semaphore. Returns findings."""
+        async with sem:
+            await emit("tool_status", {"tool": tool_name, "status": "running"})
+            local_findings: list[Finding] = []
+            async for item in gen:
+                if isinstance(item, Finding):
+                    local_findings.append(item)
+                    await emit("finding", {"finding": _finding_dict(item)})
+                elif item.stream == "warning":
+                    # _unavailable_event — tool not installed
+                    await emit("tool_status", {
+                        "tool": tool_name, "status": "skipped", "message": item.data
+                    })
+                    return local_findings
+                else:
+                    await emit("log", {"tool": tool_name, "stream": item.stream, "data": item.data})
+            await emit("tool_status", {"tool": tool_name, "status": "done"})
+            return local_findings
+
+    parallel_results = await asyncio.gather(
+        _pdrain("cdncheck", CdncheckTool().check(target)),
+        _pdrain("nmap",     NmapTool().run(target)),
+        _pdrain("asnmap",   AsnmapTool().lookup(target)),
+        _pdrain("tlsx",     TlsxTool().scan(target)),
+        _pdrain("whatweb",  WhatwebTool().run(target)),
+    )
+
+    # Post-process combined findings
+    for findings_list in parallel_results:
+        for f in findings_list:
+            result["findings"].append(f)
+            if f.tool == "cdncheck" and "CDN Detected" in f.name:
+                result["cdn_detected"] = True
+                result["cdn_name"] = f.raw.get("cdn_name") or f.raw.get("provider", "")
+            elif f.tool == "nmap" and "open port" in f.name.lower() and f.raw:
+                result["open_ports"].append(f.raw)
+            elif f.tool == "whatweb" and f.raw.get("technologies"):
+                result["technologies"] = f.raw["technologies"]
 
 
 def _finding_dict(f: Finding) -> dict:

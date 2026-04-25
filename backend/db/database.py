@@ -152,6 +152,16 @@ async def get_urls(scan_id: str, js_only: bool = False) -> list[str]:
     return [r["url"] for r in rows]
 
 
+async def get_subdomains(scan_id: str) -> list[str]:
+    db = await get_db()
+    async with db.execute(
+        "SELECT url FROM discovered_urls WHERE scan_id = ? AND source = 'subfinder' ORDER BY url",
+        (scan_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    return [r["url"] for r in rows]
+
+
 # ── Checkpoint CRUD ───────────────────────────────────────────────────────────
 
 async def save_checkpoint(scan_id: str, phase: str, status: str, data: dict = None) -> None:

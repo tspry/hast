@@ -80,6 +80,12 @@ async def get_findings(
     return {"findings": findings, "count": len(findings)}
 
 
+@router.get("/scans/{scan_id}/subdomains")
+async def get_subdomains(scan_id: str):
+    subdomains = await db.get_subdomains(scan_id)
+    return {"subdomains": subdomains, "count": len(subdomains)}
+
+
 @router.get("/scans/{scan_id}/diff")
 async def get_scan_diff(scan_id: str):
     """Compare current scan with previous scan for same target."""

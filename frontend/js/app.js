@@ -90,7 +90,7 @@ const App = (() => {
     info: "#6b7280",
   };
 
-  const recon = { waf: null, ports: [], technologies: [] };
+  const recon = { waf: null, ports: [], technologies: [], subdomains: [] };
 
   // ── WebSocket ──────────────────────────────────────────────────────────────
 
@@ -209,6 +209,11 @@ const App = (() => {
         onToolRunDone(data.tool, data.run_id);
         break;
 
+      case "subdomains_found":
+        recon.subdomains = data.subdomains || [];
+        renderSubdomains();
+        break;
+
       case "pong":
         break;
     }
@@ -219,6 +224,7 @@ const App = (() => {
   function startScan() {
     const target = document.getElementById("target-input").value.trim();
     const profile = document.getElementById("profile-select").value;
+    const parallel = document.getElementById("parallel-toggle").checked;
 
     if (!target) {
       alert("Please enter a target URL.");
@@ -232,6 +238,7 @@ const App = (() => {
     recon.waf = null;
     recon.ports = [];
     recon.technologies = [];
+    recon.subdomains = [];
     resetPhases();
     resetCounts();
     renderFindings();
@@ -243,7 +250,7 @@ const App = (() => {
     document.getElementById("waf-status-text").textContent = "Checking...";
     document.getElementById("new-findings-badge").style.display = "none";
 
-    send({ type: "start_scan", target, profile });
+    send({ type: "start_scan", target, profile, parallel });
   }
 
   function stopScan() {
@@ -543,6 +550,24 @@ const App = (() => {
     } else {
       techEl.textContent = "—";
     }
+
+    renderSubdomains();
+  }
+
+  function renderSubdomains() {
+    const listEl = document.getElementById("subdomain-list");
+    const countEl = document.getElementById("subdomain-count");
+    if (!listEl) return;
+    const subs = recon.subdomains || [];
+    if (subs.length === 0) {
+      listEl.textContent = "—";
+      if (countEl) countEl.textContent = "";
+      return;
+    }
+    if (countEl) countEl.textContent = `(${subs.length})`;
+    listEl.innerHTML = subs
+      .map((s) => `<span class="subdomain-tag">${escHtml(s)}</span>`)
+      .join("");
   }
 
   // ── Scan Complete ──────────────────────────────────────────────────────────
@@ -817,9 +842,19 @@ const App = (() => {
     }
 
     allFindings = [];
+    recon.subdomains = [];
     resetCounts();
     await loadScanFindings(safeScanId);
     await loadScanDiff(safeScanId);
+    // Load subdomains for this historical scan
+    try {
+      const subResp = await fetch(`/api/scans/${encodeURIComponent(safeScanId)}/subdomains`);
+      if (subResp.ok) {
+        const subData = await subResp.json();
+        recon.subdomains = subData.subdomains || [];
+        renderSubdomains();
+      }
+    } catch (_) {}
     showTab("findings");
   }
 
@@ -979,6 +1014,20 @@ const App = (() => {
       .trim()
       .toLowerCase();
     return ["json", "csv", "pdf"].includes(value) ? value : null;
+  }
+
+  // ── Profile Tooltip ────────────────────────────────────────────────────────
+
+  const PROFILE_DESCRIPTIONS = {
+    quick:    "Recon + nuclei + ffuf only. No crawling. Fast.",
+    standard: "Full scan — subdomains, crawl, nuclei, secrets.",
+    deep:     "Everything + brute-force DNS, all crawlers. Slow but thorough.",
+  };
+
+  function onProfileChange(profile) {
+    const el = document.getElementById("profile-tooltip");
+    if (!el) return;
+    el.textContent = PROFILE_DESCRIPTIONS[profile] || "";
   }
 
   // ── Resize Handle ──────────────────────────────────────────────────────────
@@ -1251,6 +1300,7 @@ const App = (() => {
     connect();
     loadConfig();
     initResize();
+    onProfileChange(document.getElementById("profile-select").value);
 
     const findingsTbody = document.getElementById("findings-tbody");
     findingsTbody.addEventListener("click", (e) => {
@@ -1298,5 +1348,6 @@ const App = (() => {
     filterToolCards,
     runTool,
     stopToolRun,
+    onProfileChange,
   };
 })();

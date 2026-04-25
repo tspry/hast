@@ -27,11 +27,11 @@ Built for local use. No cloud, no accounts, no data leaves your machine.
 
 ## Scan Profiles
 
-| Profile | What runs |
-|---|---|
-| **Quick** | wafw00f + whatweb + nuclei exposures + ffuf priority paths. No crawl. Fast. |
-| **Standard** | Full workflow · katana + gau · moderate rate limits |
-| **Deep** | All crawlers · headless nuclei · full ffuf wordlist · lowest rate limits |
+| Profile | What runs | When to use |
+|---|---|---|
+| **Quick** | wafw00f → cdncheck → nmap → tlsx → whatweb → nuclei (exposures) → ffuf (priority paths). No subdomain discovery or crawling. | Fast surface check — config file leaks, common misconfigs, TLS issues. Completes in 1–3 min. |
+| **Standard** | Full pipeline — subfinder → dnsx → naabu → katana + gospider + gau + urlfinder → httpx → nuclei → ffuf → JS secret scan. Moderate rate limits. | Default for most targets. Covers subdomains, crawled endpoints, secrets, and vulnerabilities. |
+| **Deep** | Everything in Standard plus hakrawler, alterx subdomain permutations, shuffledns DNS brute-force, full ffuf wordlist. Lowest rate limits for WAF evasion. | Thorough assessment when you have time. Finds more subdomains and hidden paths at the cost of speed. |
 
 ---
 

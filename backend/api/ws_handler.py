@@ -87,6 +87,7 @@ async def handle_websocket(ws: WebSocket):
                 profile = msg.get("profile", "standard").strip()
                 resume = msg.get("resume", False)
                 resume_id = msg.get("scan_id")
+                parallel = bool(msg.get("parallel", False))
 
                 if not target:
                     await ws.send_text(json.dumps({
@@ -113,6 +114,7 @@ async def handle_websocket(ws: WebSocket):
                     emit=emit,
                     scan_id=resume_id if resume else None,
                     resume=resume,
+                    parallel=parallel,
                 )
                 await ws.send_text(json.dumps({
                     "type": "scan_queued",

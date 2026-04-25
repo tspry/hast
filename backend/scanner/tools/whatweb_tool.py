@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import json
-import re
+import tempfile
+from pathlib import Path
 from typing import AsyncIterator
 
 from backend.scanner.tools.base import Finding, SimpleToolRunner, ToolEvent
@@ -17,19 +18,25 @@ class WhatwebTool(SimpleToolRunner):
             yield self._unavailable_event()
             return
 
-        json_lines: list[str] = []
-        args = [target, "--log-json=/dev/stdout", "-a", "3", "--quiet"]
+        # Write JSON to a temp file — piping /dev/stdout is unreliable
+        # when asyncio already has stdout captured
+        tf = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        json_path = tf.name
+        tf.close()
 
-        async for ev in self.run_raw(args, timeout=120):
-            yield ev
-            if ev.stream == "stdout" and ev.data.strip().startswith("["):
-                json_lines.append(ev.data.strip())
+        try:
+            args = [target, f"--log-json={json_path}", "-a", "3", "--quiet"]
 
-        # Parse
-        text = "".join(json_lines)
-        findings = _parse_whatweb(text, target)
-        for f in findings:
-            yield f
+            async for ev in self.run_raw(args, timeout=120):
+                yield ev
+
+            # Parse JSON output written to temp file
+            text = Path(json_path).read_text(errors="replace") if Path(json_path).exists() else ""
+            findings = _parse_whatweb(text, target)
+            for f in findings:
+                yield f
+        finally:
+            Path(json_path).unlink(missing_ok=True)
 
 
 def _parse_whatweb(text: str, target: str) -> list[Finding]:

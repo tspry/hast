@@ -15,11 +15,19 @@
 
   <input id="target-input" type="url" placeholder="https://target.example.com" spellcheck="false" />
 
-  <select id="profile-select">
-    <option value="quick">Quick</option>
-    <option value="standard" selected>Standard</option>
-    <option value="deep">Deep</option>
-  </select>
+  <div class="profile-wrap">
+    <select id="profile-select" onchange="App.onProfileChange(this.value)">
+      <option value="quick">Quick</option>
+      <option value="standard" selected>Standard</option>
+      <option value="deep">Deep</option>
+    </select>
+    <div class="profile-tooltip" id="profile-tooltip"></div>
+  </div>
+
+  <label class="parallel-toggle" title="Run independent tools concurrently for faster scans">
+    <input type="checkbox" id="parallel-toggle">
+    <span>Parallel</span>
+  </label>
 
   <button class="btn btn-primary" id="scan-btn" onclick="App.startScan()">
     <span>▶ Scan</span>
@@ -31,6 +39,9 @@
   <div id="waf-badge"></div>
 
   <div style="margin-left:auto; display:flex; gap:6px; align-items:center; position:relative;">
+    <button class="btn btn-ghost btn-sm" id="tab-tools" onclick="App.showTab('tools')" title="Run individual tools on demand">
+      ⚙ Tools
+    </button>
     <button class="btn btn-ghost btn-sm" onclick="App.openBulkScan()" title="Scan multiple targets at once">
       ⊞ Bulk Scan
     </button>
@@ -265,7 +276,6 @@
     <button class="tab-btn" onclick="App.showTab('recon')" id="tab-recon">Recon</button>
     <button class="tab-btn" onclick="App.showTab('js-secrets')" id="tab-js-secrets">JS Secrets</button>
     <button class="tab-btn" onclick="App.showTab('diff')" id="tab-diff">Scan Diff</button>
-    <button class="tab-btn" onclick="App.showTab('tools')" id="tab-tools">Tools</button>
     <button class="tab-btn" onclick="App.showTab('config')" id="tab-config">Config</button>
     <div class="tab-actions">
       <button class="btn btn-ghost btn-sm" onclick="App.exportData('json')" title="Export JSON">⬇ JSON</button>
@@ -328,6 +338,10 @@
       <div class="recon-card">
         <h4>Technology Stack</h4>
         <div id="tech-stack">—</div>
+      </div>
+      <div class="recon-card recon-card-wide">
+        <h4>Discovered Subdomains <span id="subdomain-count" style="font-size:11px;color:var(--text-muted);font-weight:400;"></span></h4>
+        <div id="subdomain-list" class="subdomain-list">—</div>
       </div>
     </div>
   </div>

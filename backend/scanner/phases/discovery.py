@@ -35,13 +35,15 @@ async def run_discovery(
     profile: str,
     emit: Callable,
     scan_id: str,
+    parallel: bool = False,
 ) -> dict:
     """
     Run Phase 2. Returns dict with:
-    - urls: list[str]       (all discovered URLs, deduped)
-    - js_urls: list[str]    (JS file URLs)
+    - urls: list[str]         (all discovered URLs, deduped)
+    - js_urls: list[str]      (JS file URLs)
     - open_ports: list[dict]
     - findings: list[Finding]
+    - subdomains: list[str]   (subdomains from subfinder)
     """
     await emit("phase_update", {"phase": "discovery", "status": "running"})
 
@@ -54,6 +56,63 @@ async def run_discovery(
 
     if target_host and ":" in target_host:
         target_host = target_host.split(":", 1)[0]
+
+    # ── Crawlers helper (defined early so parallel mode can start tasks before subfinder) ─
+    run_gospider = profile in ("standard", "deep")
+    run_hakrawler = profile == "deep"
+    run_gau = profile in ("standard", "deep")
+    run_urlfinder = profile in ("standard", "deep")
+
+    async def run_crawler(tool_name, coro_gen):
+        """Drain a crawler coroutine, emit status, collect URLs."""
+        tool_urls: set[str] = set()
+        await emit("tool_status", {"tool": tool_name, "status": "running"})
+        try:
+            async for item in coro_gen:
+                if isinstance(item, ToolEvent):
+                    if item.stream == "warning":
+                        await emit("tool_status", {"tool": tool_name, "status": "skipped",
+                                                   "message": item.data})
+                        return tool_urls
+                    await emit("log", {"tool": tool_name, "stream": item.stream, "data": item.data})
+                    for url in extract_urls_from_line(item.data):
+                        tool_urls.add(url)
+        except Exception as exc:
+            await emit("log", {"tool": tool_name, "stream": "error",
+                               "data": f"[{tool_name}] error: {exc}"})
+        await emit("tool_status", {"tool": tool_name, "status": "done",
+                                   "message": f"{len(tool_urls)} URLs"})
+        return tool_urls
+
+    # In parallel mode, launch crawlers NOW as background tasks so they run
+    # concurrently while the subfinder → dnsx → naabu chain runs below.
+    pending_crawler_tasks: list[asyncio.Task] = []
+    if parallel and profile != "quick":
+        depth = 3 if profile == "standard" else 4
+        pending_crawler_tasks.append(asyncio.create_task(
+            run_crawler("katana", KatanaTool().crawl(target, depth=depth))
+        ))
+        if run_gospider:
+            pending_crawler_tasks.append(asyncio.create_task(
+                run_crawler("gospider", GospiderTool().crawl(target))
+            ))
+        if run_hakrawler:
+            pending_crawler_tasks.append(asyncio.create_task(
+                run_crawler("hakrawler", HakrawlerTool().crawl(target))
+            ))
+        if run_gau:
+            pending_crawler_tasks.append(asyncio.create_task(
+                run_crawler("gau", GauTool().fetch(target))
+            ))
+        if run_urlfinder:
+            _uf = UrlffinderTool()
+            if not _uf.available:
+                await emit("tool_status", {"tool": "urlfinder", "status": "skipped",
+                                           "message": "urlfinder not found"})
+            else:
+                pending_crawler_tasks.append(asyncio.create_task(
+                    run_crawler("urlfinder", _uf.find(target))
+                ))
 
     # ── subfinder ───────────────────────────────────────────────────────────
     await emit("tool_status", {"tool": "subfinder", "status": "running"})
@@ -105,6 +164,12 @@ async def run_discovery(
                 "tool_status",
                 {"tool": "subfinder", "status": "done", "message": "0 subdomains"},
             )
+
+    # Emit subdomains discovered event for live UI update
+    await emit("subdomains_found", {
+        "subdomains": sorted(subdomains),
+        "count": len(subdomains),
+    })
 
     # ── dnsx ────────────────────────────────────────────────────────────────
     dns_inputs_set = set(subdomains)
@@ -250,126 +315,30 @@ async def run_discovery(
                 },
             )
 
-    # Determine which crawlers to run per profile
-    run_gospider = profile in ("standard", "deep")
-    run_hakrawler = profile == "deep"
-    run_gau = profile in ("standard", "deep")
-
-    # ── Parallel crawlers ─────────────────────────────────────────────────────
-    crawl_tasks = []
-
-    async def run_crawler(tool_name, coro_gen):
-        """Drain a crawler coroutine, collect URLs."""
-        tool_urls = set()
-        tool = None
-        try:
-            async for item in coro_gen:
-                if isinstance(item, ToolEvent):
-                    if item.stream == "warning":
-                        await emit(
-                            "tool_status",
-                            {
-                                "tool": tool_name,
-                                "status": "skipped",
-                                "message": item.data,
-                            },
-                        )
-                        return tool_urls
-                    await emit(
-                        "log",
-                        {"tool": tool_name, "stream": item.stream, "data": item.data},
-                    )
-                    # Extract URLs from output line
-                    for url in extract_urls_from_line(item.data):
-                        tool_urls.add(url)
-        except Exception as exc:
-            await emit(
-                "log",
-                {
-                    "tool": tool_name,
-                    "stream": "error",
-                    "data": f"[{tool_name}] error: {exc}",
-                },
-            )
-        return tool_urls
-
-    # katana (always for standard/deep, skip for quick)
-    if profile != "quick":
-        await emit("tool_status", {"tool": "katana", "status": "running"})
-        katana = KatanaTool()
+    if pending_crawler_tasks:
+        # Parallel mode: collect all crawler results now (they ran concurrently
+        # with the subfinder → dnsx → naabu chain above).
+        results = await asyncio.gather(*pending_crawler_tasks)
+        for urls in results:
+            all_urls.update(urls)
+    elif profile != "quick":
+        # Sequential mode: run crawlers one by one.
         depth = 3 if profile == "standard" else 4
-        katana_urls = await run_crawler("katana", katana.crawl(target, depth=depth))
-        all_urls.update(katana_urls)
-        await emit(
-            "tool_status",
-            {"tool": "katana", "status": "done", "message": f"{len(katana_urls)} URLs"},
-        )
+        all_urls.update(await run_crawler("katana", KatanaTool().crawl(target, depth=depth)))
 
-    # gospider (standard + deep, parallel)
-    gospider_task = None
-    if run_gospider:
-        await emit("tool_status", {"tool": "gospider", "status": "running"})
-        gospider = GospiderTool()
-        gospider_task = asyncio.create_task(
-            run_crawler("gospider", gospider.crawl(target))
-        )
-
-    # hakrawler (deep only, parallel)
-    hakrawler_task = None
-    if run_hakrawler:
-        await emit("tool_status", {"tool": "hakrawler", "status": "running"})
-        hakrawler = HakrawlerTool()
-        hakrawler_task = asyncio.create_task(
-            run_crawler("hakrawler", hakrawler.crawl(target))
-        )
-
-    # Wait for parallel crawlers
-    if gospider_task:
-        gs_urls = await gospider_task
-        all_urls.update(gs_urls)
-        await emit(
-            "tool_status",
-            {"tool": "gospider", "status": "done", "message": f"{len(gs_urls)} URLs"},
-        )
-
-    if hakrawler_task:
-        hk_urls = await hakrawler_task
-        all_urls.update(hk_urls)
-        await emit(
-            "tool_status",
-            {"tool": "hakrawler", "status": "done", "message": f"{len(hk_urls)} URLs"},
-        )
-
-    # ── gau ───────────────────────────────────────────────────────────────────
-    if run_gau:
-        await emit("tool_status", {"tool": "gau", "status": "running"})
-        gau = GauTool()
-        gau_urls = await run_crawler("gau", gau.fetch(target))
-        all_urls.update(gau_urls)
-        await emit(
-            "tool_status",
-            {"tool": "gau", "status": "done", "message": f"{len(gau_urls)} URLs"},
-        )
-
-    # ── urlfinder (standard + deep) ──────────────────────────────────────────
-    if profile in ("standard", "deep"):
-        await emit("tool_status", {"tool": "urlfinder", "status": "running"})
-        urlfinder = UrlffinderTool()
-        if not urlfinder.available:
-            await emit("tool_status", {"tool": "urlfinder", "status": "skipped",
-                                       "message": "urlfinder not found"})
-        else:
-            uf_urls: set[str] = set()
-            async for item in urlfinder.find(target):
-                if isinstance(item, ToolEvent):
-                    if item.stream == "stdout":
-                        for url in extract_urls_from_line(item.data):
-                            uf_urls.add(url)
-                    else:
-                        await emit("log", {"tool": "urlfinder", "stream": item.stream, "data": item.data})
-            all_urls.update(uf_urls)
-            await emit("tool_status", {"tool": "urlfinder", "status": "done",
-                                       "message": f"{len(uf_urls)} URLs"})
+        if run_gospider:
+            all_urls.update(await run_crawler("gospider", GospiderTool().crawl(target)))
+        if run_hakrawler:
+            all_urls.update(await run_crawler("hakrawler", HakrawlerTool().crawl(target)))
+        if run_gau:
+            all_urls.update(await run_crawler("gau", GauTool().fetch(target)))
+        if run_urlfinder:
+            urlfinder = UrlffinderTool()
+            if not urlfinder.available:
+                await emit("tool_status", {"tool": "urlfinder", "status": "skipped",
+                                           "message": "urlfinder not found"})
+            else:
+                all_urls.update(await run_crawler("urlfinder", urlfinder.find(target)))
 
     # ── httpx ────────────────────────────────────────────────────────────────
     probe_targets_set = set(all_urls)
@@ -455,6 +424,7 @@ async def run_discovery(
         "js_urls": js_urls,
         "open_ports": open_ports,
         "findings": findings,
+        "subdomains": sorted(subdomains),
     }
 
 

@@ -27,6 +27,7 @@ async def run_scanning(
     open_ports: list[dict],
     emit: Callable,
     scan_id: str,
+    parallel: bool = False,
 ) -> list[Finding]:
     """Run Phase 3. Returns list of all Findings."""
     await emit("phase_update", {"phase": "scanning", "status": "running"})
@@ -58,97 +59,18 @@ async def run_scanning(
 
     all_scan_urls = list(set(urls + extra_targets))
 
-    # ── nuclei ────────────────────────────────────────────────────────────────
-    await emit("tool_status", {"tool": "nuclei", "status": "running"})
-    nuclei = NucleiTool()
-    if not nuclei.available:
-        await emit(
-            "tool_status",
-            {"tool": "nuclei", "status": "skipped", "message": "nuclei not found"},
+    if parallel:
+        # Run nuclei and ffuf concurrently
+        nuclei_findings, ffuf_findings = await asyncio.gather(
+            _run_nuclei(all_scan_urls, profile, rate_ms, emit),
+            _run_ffuf(target, profile, rate_ms, emit),
         )
+        all_findings.extend(nuclei_findings)
+        all_findings.extend(ffuf_findings)
     else:
-        headless = profile == "deep"
-        # Convert ms delay to approximate rate limit for nuclei
-        nuclei_rate = max(1, 1000 // max(rate_ms, 50))
-        finding_count = 0
-        async for item in nuclei.run(
-            all_scan_urls,
-            rate_limit=rate_ms,
-            headless=headless,
-        ):
-            if isinstance(item, Finding):
-                all_findings.append(item)
-                finding_count += 1
-                await emit("finding", {"finding": _finding_to_dict(item)})
-            else:
-                await emit(
-                    "log", {"tool": "nuclei", "stream": item.stream, "data": item.data}
-                )
-        await emit(
-            "tool_status",
-            {
-                "tool": "nuclei",
-                "status": "done",
-                "message": f"{finding_count} findings",
-            },
-        )
-
-    # ── ffuf ──────────────────────────────────────────────────────────────────
-    await emit("tool_status", {"tool": "ffuf", "status": "running"})
-    ffuf = FfufTool()
-    if not ffuf.available:
-        # Fall back to curl probing
-        await emit(
-            "tool_status",
-            {
-                "tool": "ffuf",
-                "status": "skipped",
-                "message": "ffuf not found — using curl fallback",
-            },
-        )
-        await emit("tool_status", {"tool": "curl", "status": "running"})
-        curl = CurlTool()
-        if curl.available:
-            finding_count = 0
-            async for item in curl.probe_paths(target, rate_ms=rate_ms):
-                if isinstance(item, Finding):
-                    all_findings.append(item)
-                    finding_count += 1
-                    await emit("finding", {"finding": _finding_to_dict(item)})
-                else:
-                    await emit(
-                        "log",
-                        {"tool": "curl", "stream": item.stream, "data": item.data},
-                    )
-            await emit(
-                "tool_status",
-                {
-                    "tool": "curl",
-                    "status": "done",
-                    "message": f"{finding_count} findings",
-                },
-            )
-        else:
-            await emit(
-                "tool_status",
-                {"tool": "curl", "status": "skipped", "message": "curl not found"},
-            )
-    else:
-        use_full = profile == "deep"
-        finding_count = 0
-        async for item in ffuf.run(target, use_full_wordlist=use_full):
-            if isinstance(item, Finding):
-                all_findings.append(item)
-                finding_count += 1
-                await emit("finding", {"finding": _finding_to_dict(item)})
-            else:
-                await emit(
-                    "log", {"tool": "ffuf", "stream": item.stream, "data": item.data}
-                )
-        await emit(
-            "tool_status",
-            {"tool": "ffuf", "status": "done", "message": f"{finding_count} findings"},
-        )
+        # Sequential: nuclei first, then ffuf
+        all_findings.extend(await _run_nuclei(all_scan_urls, profile, rate_ms, emit))
+        all_findings.extend(await _run_ffuf(target, profile, rate_ms, emit))
 
     # ── JS secret scanning ────────────────────────────────────────────────────
     if js_urls:
@@ -214,6 +136,71 @@ async def run_scanning(
         },
     )
     return all_findings
+
+
+async def _run_nuclei(
+    scan_urls: list[str],
+    profile: str,
+    rate_ms: int,
+    emit: Callable,
+) -> list[Finding]:
+    findings: list[Finding] = []
+    await emit("tool_status", {"tool": "nuclei", "status": "running"})
+    nuclei = NucleiTool()
+    if not nuclei.available:
+        await emit("tool_status", {"tool": "nuclei", "status": "skipped", "message": "nuclei not found"})
+        return findings
+    headless = profile == "deep"
+    count = 0
+    async for item in nuclei.run(scan_urls, rate_limit=rate_ms, headless=headless):
+        if isinstance(item, Finding):
+            findings.append(item)
+            count += 1
+            await emit("finding", {"finding": _finding_to_dict(item)})
+        else:
+            await emit("log", {"tool": "nuclei", "stream": item.stream, "data": item.data})
+    await emit("tool_status", {"tool": "nuclei", "status": "done", "message": f"{count} findings"})
+    return findings
+
+
+async def _run_ffuf(
+    target: str,
+    profile: str,
+    rate_ms: int,
+    emit: Callable,
+) -> list[Finding]:
+    findings: list[Finding] = []
+    await emit("tool_status", {"tool": "ffuf", "status": "running"})
+    ffuf = FfufTool()
+    if not ffuf.available:
+        await emit("tool_status", {"tool": "ffuf", "status": "skipped",
+                                   "message": "ffuf not found — using curl fallback"})
+        await emit("tool_status", {"tool": "curl", "status": "running"})
+        curl = CurlTool()
+        if curl.available:
+            count = 0
+            async for item in curl.probe_paths(target, rate_ms=rate_ms):
+                if isinstance(item, Finding):
+                    findings.append(item)
+                    count += 1
+                    await emit("finding", {"finding": _finding_to_dict(item)})
+                else:
+                    await emit("log", {"tool": "curl", "stream": item.stream, "data": item.data})
+            await emit("tool_status", {"tool": "curl", "status": "done", "message": f"{count} findings"})
+        else:
+            await emit("tool_status", {"tool": "curl", "status": "skipped", "message": "curl not found"})
+        return findings
+    use_full = profile == "deep"
+    count = 0
+    async for item in ffuf.run(target, use_full_wordlist=use_full):
+        if isinstance(item, Finding):
+            findings.append(item)
+            count += 1
+            await emit("finding", {"finding": _finding_to_dict(item)})
+        else:
+            await emit("log", {"tool": "ffuf", "stream": item.stream, "data": item.data})
+    await emit("tool_status", {"tool": "ffuf", "status": "done", "message": f"{count} findings"})
+    return findings
 
 
 def _finding_to_dict(f: Finding) -> dict:

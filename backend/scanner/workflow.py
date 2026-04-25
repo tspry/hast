@@ -27,6 +27,7 @@ async def start_scan(
     emit: Callable,
     scan_id: Optional[str] = None,
     resume: bool = False,
+    parallel: bool = False,
 ) -> str:
     """Start or resume a scan. Returns scan_id."""
     if not scan_id:
@@ -42,7 +43,7 @@ async def start_scan(
             return sid
 
     _stop_flags[scan_id] = False
-    task = asyncio.create_task(_run_scan(scan_id, target, profile, emit, resume))
+    task = asyncio.create_task(_run_scan(scan_id, target, profile, emit, resume, parallel))
     _active_scans[scan_id] = task
     return scan_id
 
@@ -73,6 +74,7 @@ async def _run_scan(
     profile: str,
     emit: Callable,
     resume: bool,
+    parallel: bool = False,
 ) -> None:
     """Execute full scan workflow."""
     try:
@@ -120,7 +122,7 @@ async def _run_scan(
                 return
             await db.update_scan(scan_id, phase="recon")
             try:
-                recon_result = await run_recon(target, emit, scan_id)
+                recon_result = await run_recon(target, emit, scan_id, parallel=parallel)
                 # Persist recon findings
                 for f in recon_result.get("findings", []):
                     await db.insert_finding(
@@ -173,7 +175,7 @@ async def _run_scan(
                 await db.update_scan(scan_id, phase="discovery")
                 try:
                     discovery_result = await run_discovery(
-                        target, profile, emit, scan_id
+                        target, profile, emit, scan_id, parallel=parallel
                     )
                     await db.insert_urls(
                         scan_id, discovery_result["urls"], "crawler", False
@@ -181,6 +183,10 @@ async def _run_scan(
                     await db.insert_urls(
                         scan_id, discovery_result["js_urls"], "crawler", True
                     )
+                    if discovery_result.get("subdomains"):
+                        await db.insert_urls(
+                            scan_id, discovery_result["subdomains"], "subfinder", False
+                        )
                     for f in discovery_result.get("findings", []):
                         await db.insert_finding(
                             {
@@ -259,6 +265,7 @@ async def _run_scan(
                     open_ports=recon_result["open_ports"],
                     emit=emit,
                     scan_id=scan_id,
+                    parallel=parallel,
                 )
                 scan_findings.extend(new_scan_findings)
                 await db.save_checkpoint(
