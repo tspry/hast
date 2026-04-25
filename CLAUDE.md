@@ -54,7 +54,7 @@ HAST/
 │   │   ├── workflow.py         # Main orchestrator: phases in order, checkpoint/resume, stop flag
 │   │   ├── phases/
 │   │   │   ├── recon.py        # Phase 1: wafw00f → nmap → whatweb (sequential)
-│   │   │   ├── discovery.py    # Phase 2: katana + gospider + hakrawler (parallel) → gau → dedup
+│   │   │   ├── discovery.py    # Phase 2: subfinder → dnsx → naabu → crawlers (katana/gospider/hakrawler/gau) → httpx → dedup
 │   │   │   ├── scanning.py     # Phase 3: nuclei → ffuf (curl fallback) → JS secret scan loop
 │   │   │   └── aggregation.py  # Phase 4: dedup, risk scoring, diff vs prev scan, persist
 │   │   └── tools/
@@ -63,6 +63,7 @@ HAST/
 │   │       ├── nmap_tool.py
 │   │       ├── whatweb_tool.py
 │   │       ├── crawler_tools.py  # katana, gospider, hakrawler, gau
+│   │       ├── projectdiscovery_tools.py  # subfinder, dnsx, httpx, naabu
 │   │       ├── nuclei_tool.py
 │   │       ├── ffuf_tool.py
 │   │       ├── secret_tools.py   # trufflehog, gitleaks, regex SECRET_PATTERNS fallback
@@ -102,7 +103,8 @@ HAST/
   "id":          str,   # UUID
   "scan_id":     str,   # UUID
   "tool":        str,   # "nuclei" | "ffuf" | "nmap" | "wafw00f" | "whatweb" | "curl" |
-                        # "gitleaks" | "trufflehog" | "regex-secret-scan"
+                        # "gitleaks" | "trufflehog" | "regex-secret-scan" |
+                        # "subfinder" | "dnsx" | "httpx" | "naabu"
   "severity":    str,   # "critical" | "high" | "medium" | "low" | "info"
   "name":        str,
   "url":         str,
@@ -138,10 +140,18 @@ HAST/
 | `stop_scan` | `{scan_id}` |
 | `ping` | — |
 
+**Phase 2 discovery flow** (`discovery.py`):
+1. subfinder — enumerate subdomains of the target host
+2. dnsx — resolve subdomains to live hosts
+3. naabu — port-scan discovered subdomains (top 100 ports, skips target host itself)
+4. Crawlers (parallel where possible): katana always; gospider on standard+deep; hakrawler on deep only; gau on standard+deep
+5. httpx — probe all collected URLs + resolved hosts to confirm live endpoints; adds confirmed URLs back into the URL set
+6. Filter all URLs to target host + its subdomains, then dedup
+
 **Scan profiles:**
-- `quick` — recon only + nuclei exposures + ffuf priority paths. No crawl phase.
-- `standard` — full workflow, katana + gau, moderate rate limits
-- `deep` — all crawlers, headless nuclei, full ffuf wordlist, lowest rate limits
+- `quick` — recon only + nuclei exposures + ffuf priority paths. No crawl/discovery phase.
+- `standard` — full workflow, subfinder/dnsx/naabu + katana/gospider/gau + httpx, moderate rate limits
+- `deep` — all crawlers (adds hakrawler), headless nuclei, full ffuf wordlist, lowest rate limits
 
 **Resume:** Each phase writes a checkpoint to `scan_checkpoints` table on completion. Passing `resume=True` + existing `scan_id` skips already-completed phases and reloads their data from DB.
 
@@ -183,7 +193,7 @@ DB path: `/data/hast.db` inside container (named Docker volume), overridable via
 | GET | `/api/scans/{id}/export/pdf` | Export PDF report (reportlab) |
 | GET | `/api/config` | Read current config |
 | POST | `/api/config` | Update config (persists to config.yaml) |
-| GET | `/api/tools/status` | Availability check for all 12 tools |
+| GET | `/api/tools/status` | Availability check for all tools |
 | POST | `/api/bulk-scan` | Queue sequential scans for multiple targets `{targets[], profile}` |
 | GET | `/api/bulk-scan/summary` | Latest scan result per target `?targets=a.com,b.com` |
 
@@ -192,7 +202,7 @@ DB path: `/data/hast.db` inside container (named Docker volume), overridable via
 ## Docker
 
 **Two-stage Dockerfile:**
-- Stage 1 (`tool-downloader`): debian + curl, downloads latest GitHub release binaries for nuclei, katana, gospider, hakrawler, gau, ffuf, trufflehog, gitleaks. Each download is `|| true` — failures are warnings, not errors.
+- Stage 1 (`tool-downloader`): debian + curl, downloads latest GitHub release binaries for nuclei, katana, gospider, hakrawler, gau, ffuf, trufflehog, gitleaks, subfinder, dnsx, httpx, naabu. Each download is `|| true` — failures are warnings, not errors.
 - Stage 2 (final): python:3.12-slim + apt (nmap, curl, ruby) + gem (whatweb) + pip (wafw00f). Copies binaries from stage 1 via a shell loop that only installs present files.
 
 **Key docker-compose settings:**

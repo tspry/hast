@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.scanner.workflow import start_scan, stop_scan
+from backend.scanner.individual_runner import run_tool, stop_tool_run, stop_all_runs
 
 
 class ConnectionManager:
@@ -53,6 +54,7 @@ async def handle_websocket(ws: WebSocket):
     """Main WebSocket handler."""
     await manager.connect(ws)
     current_scan_id = None
+    active_tool_run_ids: set[str] = set()
 
     async def emit(event_type: str, data: Any):
         msg = {"type": event_type, "data": data}
@@ -126,6 +128,27 @@ async def handle_websocket(ws: WebSocket):
                         "data": {"scan_id": scan_id, "stopped": stopped}
                     }))
 
+            elif msg_type == "run_tool":
+                tool_name = msg.get("tool", "").strip()
+                params = msg.get("params", {})
+                if not tool_name:
+                    await ws.send_text(json.dumps({
+                        "type": "error", "data": {"message": "tool name required"}
+                    }))
+                    continue
+                run_id = await run_tool(tool_name, params, emit)
+                active_tool_run_ids.add(run_id)
+
+            elif msg_type == "stop_tool_run":
+                run_id = msg.get("run_id", "")
+                if run_id:
+                    stopped = await stop_tool_run(run_id)
+                    active_tool_run_ids.discard(run_id)
+                    await ws.send_text(json.dumps({
+                        "type": "tool_run_stop_ack",
+                        "data": {"run_id": run_id, "stopped": stopped},
+                    }))
+
             elif msg_type == "ping":
                 await ws.send_text(json.dumps({"type": "pong"}))
 
@@ -145,4 +168,5 @@ async def handle_websocket(ws: WebSocket):
         except Exception:
             pass
     finally:
+        await stop_all_runs(active_tool_run_ids)
         manager.disconnect(ws, current_scan_id)

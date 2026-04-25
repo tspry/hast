@@ -1,4 +1,4 @@
-"""Phase 1 – Recon: wafw00f, nmap, whatweb."""
+"""Phase 1 – Recon: wafw00f, cdncheck, nmap, asnmap, tlsx, whatweb."""
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +8,11 @@ from backend.scanner.tools.base import Finding, ToolEvent
 from backend.scanner.tools.wafw00f_tool import Wafw00fTool
 from backend.scanner.tools.nmap_tool import NmapTool
 from backend.scanner.tools.whatweb_tool import WhatwebTool
+from backend.scanner.tools.projectdiscovery_tools import (
+    TlsxTool,
+    CdncheckTool,
+    AsnmapTool,
+)
 
 
 async def run_recon(
@@ -26,6 +31,8 @@ async def run_recon(
     result = {
         "waf_detected": False,
         "waf_name": None,
+        "cdn_detected": False,
+        "cdn_name": None,
         "open_ports": [],
         "technologies": [],
         "findings": [],
@@ -59,6 +66,25 @@ async def run_recon(
         ),
     })
 
+    # ── cdncheck ──────────────────────────────────────────────────────────────
+    await emit("tool_status", {"tool": "cdncheck", "status": "running"})
+    cdncheck = CdncheckTool()
+    if not cdncheck.available:
+        await emit("tool_status", {"tool": "cdncheck", "status": "skipped",
+                                   "message": "cdncheck not found"})
+    else:
+        async for item in cdncheck.check(target):
+            if isinstance(item, Finding):
+                result["findings"].append(item)
+                if "CDN Detected" in item.name:
+                    result["cdn_detected"] = True
+                    result["cdn_name"] = item.raw.get("cdn_name") or item.raw.get("provider", "")
+                await emit("finding", {"finding": _finding_dict(item)})
+            else:
+                await emit("log", {"tool": "cdncheck", "stream": item.stream, "data": item.data})
+        msg = f"CDN: {result['cdn_name']}" if result["cdn_detected"] else "No CDN"
+        await emit("tool_status", {"tool": "cdncheck", "status": "done", "message": msg})
+
     # ── nmap ─────────────────────────────────────────────────────────────────
     await emit("tool_status", {"tool": "nmap", "status": "running"})
     nmap = NmapTool()
@@ -77,6 +103,39 @@ async def run_recon(
             else:
                 await emit("log", {"tool": "nmap", "stream": item.stream, "data": item.data})
         await emit("tool_status", {"tool": "nmap", "status": "done"})
+
+    # ── asnmap ────────────────────────────────────────────────────────────────
+    await emit("tool_status", {"tool": "asnmap", "status": "running"})
+    asnmap = AsnmapTool()
+    if not asnmap.available:
+        await emit("tool_status", {"tool": "asnmap", "status": "skipped",
+                                   "message": "asnmap not found"})
+    else:
+        async for item in asnmap.lookup(target):
+            if isinstance(item, Finding):
+                result["findings"].append(item)
+                await emit("finding", {"finding": _finding_dict(item)})
+            else:
+                await emit("log", {"tool": "asnmap", "stream": item.stream, "data": item.data})
+        await emit("tool_status", {"tool": "asnmap", "status": "done"})
+
+    # ── tlsx ──────────────────────────────────────────────────────────────────
+    await emit("tool_status", {"tool": "tlsx", "status": "running"})
+    tlsx = TlsxTool()
+    if not tlsx.available:
+        await emit("tool_status", {"tool": "tlsx", "status": "skipped",
+                                   "message": "tlsx not found"})
+    else:
+        tls_count = 0
+        async for item in tlsx.scan(target):
+            if isinstance(item, Finding):
+                result["findings"].append(item)
+                tls_count += 1
+                await emit("finding", {"finding": _finding_dict(item)})
+            else:
+                await emit("log", {"tool": "tlsx", "stream": item.stream, "data": item.data})
+        await emit("tool_status", {"tool": "tlsx", "status": "done",
+                                   "message": f"{tls_count} TLS findings"})
 
     # ── whatweb ───────────────────────────────────────────────────────────────
     await emit("tool_status", {"tool": "whatweb", "status": "running"})
@@ -98,7 +157,22 @@ async def run_recon(
                                 "data": {
                                     "waf_detected": result["waf_detected"],
                                     "waf_name": result["waf_name"],
+                                    "cdn_detected": result["cdn_detected"],
+                                    "cdn_name": result["cdn_name"],
                                     "ports_count": len(result["open_ports"]),
                                     "tech_count": len(result["technologies"]),
                                 }})
     return result
+
+
+def _finding_dict(f: Finding) -> dict:
+    return {
+        "tool": f.tool,
+        "severity": f.severity,
+        "name": f.name,
+        "url": f.url,
+        "evidence": f.evidence,
+        "remediation": f.remediation,
+        "cvss_score": f.cvss_score,
+        "risk_score": f.risk_score(),
+    }

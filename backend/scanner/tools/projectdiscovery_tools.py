@@ -160,6 +160,219 @@ class NaabuTool(SimpleToolRunner):
             Path(host_file).unlink(missing_ok=True)
 
 
+class TlsxTool(SimpleToolRunner):
+    name = "tlsx"
+    binary = "tlsx"
+
+    async def scan(self, target: str) -> AsyncIterator[ToolEvent | Finding]:
+        if not self.available:
+            yield self._unavailable_event()
+            return
+        # Strip scheme — tlsx wants host[:port]
+        from urllib.parse import urlparse
+        parsed = urlparse(target)
+        host = parsed.netloc or parsed.path
+        args = ["-u", host, "-json", "-silent", "-expired", "-self-signed", "-mismatched", "-ro"]
+        async for ev in self.run_raw(args, timeout=60):
+            yield ev
+            if ev.stream == "stdout":
+                f = _parse_tlsx_line(ev.data, target)
+                if f:
+                    yield f
+
+
+class CdncheckTool(SimpleToolRunner):
+    name = "cdncheck"
+    binary = "cdncheck"
+
+    async def check(self, target: str) -> AsyncIterator[ToolEvent | Finding]:
+        if not self.available:
+            yield self._unavailable_event()
+            return
+        from urllib.parse import urlparse
+        host = urlparse(target).hostname or target
+        args = ["-i", host, "-resp", "-json", "-silent"]
+        async for ev in self.run_raw(args, timeout=30):
+            yield ev
+            if ev.stream == "stdout":
+                f = _parse_cdncheck_line(ev.data, target)
+                if f:
+                    yield f
+
+
+class AsnmapTool(SimpleToolRunner):
+    name = "asnmap"
+    binary = "asnmap"
+
+    async def lookup(self, target: str) -> AsyncIterator[ToolEvent | Finding]:
+        if not self.available:
+            yield self._unavailable_event()
+            return
+        from urllib.parse import urlparse
+        host = urlparse(target).hostname or target
+        args = ["-i", host, "-json", "-silent"]
+        async for ev in self.run_raw(args, timeout=60):
+            yield ev
+            if ev.stream == "stdout":
+                f = _parse_asnmap_line(ev.data, target)
+                if f:
+                    yield f
+
+
+class AlterxTool(SimpleToolRunner):
+    name = "alterx"
+    binary = "alterx"
+
+    async def permute(self, subdomains: list[str]) -> AsyncIterator[ToolEvent]:
+        if not self.available:
+            yield self._unavailable_event()
+            return
+        sub_file = _write_temp_lines(subdomains)
+        try:
+            args = ["-l", sub_file, "-silent"]
+            async for ev in self.run_raw(args, timeout=120):
+                yield ev
+        finally:
+            Path(sub_file).unlink(missing_ok=True)
+
+
+class ShuffleDnsTool(SimpleToolRunner):
+    name = "shuffledns"
+    binary = "shuffledns"
+
+    async def bruteforce(
+        self, domain: str, wordlist: str, resolvers: str
+    ) -> AsyncIterator[ToolEvent]:
+        if not self.available:
+            yield self._unavailable_event()
+            return
+        args = [
+            "-d", domain,
+            "-w", wordlist,
+            "-r", resolvers,
+            "-silent",
+            "-json",
+        ]
+        async for ev in self.run_raw(args, timeout=900):
+            yield ev
+
+
+class UrlffinderTool(SimpleToolRunner):
+    name = "urlfinder"
+    binary = "urlfinder"
+
+    async def find(self, target: str) -> AsyncIterator[ToolEvent]:
+        if not self.available:
+            yield self._unavailable_event()
+            return
+        args = ["-u", target, "-silent", "-all"]
+        async for ev in self.run_raw(args, timeout=300):
+            yield ev
+
+
+# ── Output parsers ────────────────────────────────────────────────────────────
+
+def _parse_tlsx_line(line: str, target: str) -> Optional[Finding]:
+    data = _json_or_text(line)
+    if not isinstance(data, dict):
+        return None
+    host = _tool_value(data, "host", "ip") or target
+    expired = data.get("expired", False)
+    self_signed = data.get("self_signed", False)
+    mismatched = data.get("mismatched", False)
+    tls_version = data.get("tls_version", data.get("version", ""))
+    subject_cn = data.get("subject_cn", data.get("host", ""))
+    not_after = data.get("not_after", "")
+    issuer = data.get("issuer_cn", data.get("issuer_org", [""])[0] if isinstance(data.get("issuer_org"), list) else "")
+
+    if expired:
+        return Finding(
+            tool="tlsx", severity="high",
+            name="Expired TLS Certificate",
+            url=target,
+            evidence=f"Certificate for {subject_cn} expired on {not_after}. Issued by: {issuer}",
+            remediation="Renew the TLS certificate immediately. Set up auto-renewal (Let's Encrypt / ACME).",
+            raw=data,
+        )
+    if self_signed:
+        return Finding(
+            tool="tlsx", severity="medium",
+            name="Self-Signed TLS Certificate",
+            url=target,
+            evidence=f"Certificate for {subject_cn} is self-signed (not trusted by browsers).",
+            remediation="Replace with a certificate from a trusted CA (e.g. Let's Encrypt).",
+            raw=data,
+        )
+    if mismatched:
+        return Finding(
+            tool="tlsx", severity="medium",
+            name="TLS Certificate Hostname Mismatch",
+            url=target,
+            evidence=f"Certificate CN={subject_cn} does not match the host.",
+            remediation="Obtain a certificate that covers the correct hostname.",
+            raw=data,
+        )
+    if tls_version and tls_version.lower() in ("tls10", "tls1.0", "tls 1.0", "tls11", "tls1.1", "tls 1.1"):
+        return Finding(
+            tool="tlsx", severity="medium",
+            name=f"Weak TLS Version: {tls_version}",
+            url=target,
+            evidence=f"Server supports deprecated {tls_version}.",
+            remediation="Disable TLS 1.0 and 1.1. Require TLS 1.2+ with strong cipher suites.",
+            raw=data,
+        )
+    # Informational — cert is valid
+    return Finding(
+        tool="tlsx", severity="info",
+        name="TLS Certificate Info",
+        url=target,
+        evidence=f"CN={subject_cn} | Issuer={issuer} | Expires={not_after} | Version={tls_version}",
+        remediation="Monitor certificate expiry and renew before expiration.",
+        raw=data,
+    )
+
+
+def _parse_cdncheck_line(line: str, target: str) -> Optional[Finding]:
+    data = _json_or_text(line)
+    if not isinstance(data, dict):
+        return None
+    cdn_name = _tool_value(data, "cdn_name", "provider", "name") or ""
+    cdn_type = _tool_value(data, "type", "cdn_type") or "cdn"
+    ip = _tool_value(data, "ip", "input") or ""
+    if not cdn_name:
+        return None
+    return Finding(
+        tool="cdncheck", severity="info",
+        name=f"CDN Detected: {cdn_name}",
+        url=target,
+        evidence=f"IP {ip} is part of {cdn_name} ({cdn_type}). Traffic passes through CDN edge nodes.",
+        remediation="Ensure the origin server IP is not exposed. CDN may mask some vulnerabilities — test origin directly if possible.",
+        raw=data,
+    )
+
+
+def _parse_asnmap_line(line: str, target: str) -> Optional[Finding]:
+    data = _json_or_text(line)
+    if not isinstance(data, dict):
+        return None
+    asn = _tool_value(data, "asn", "as_number") or ""
+    org = _tool_value(data, "org", "as_org", "as_name") or ""
+    cidrs = data.get("cidr", data.get("routes", []))
+    if isinstance(cidrs, str):
+        cidrs = [cidrs]
+    if not asn and not org:
+        return None
+    cidr_str = ", ".join(cidrs[:10]) if cidrs else "N/A"
+    return Finding(
+        tool="asnmap", severity="info",
+        name=f"ASN Info: {asn} ({org})",
+        url=target,
+        evidence=f"ASN: {asn} | Org: {org} | CIDRs: {cidr_str}",
+        remediation="Review all IP ranges in the ASN for additional exposed services.",
+        raw=data,
+    )
+
+
 def parse_subfinder_record(line: str) -> Optional[str]:
     data = _json_or_text(line)
     return _tool_value(data, "host", "subdomain", "name")

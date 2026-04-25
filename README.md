@@ -17,9 +17,10 @@ Built for local use. No cloud, no accounts, no data leaves your machine.
 | **Center** | Streaming terminal output from every tool, color-coded by stream |
 | **Right** | Live severity counters (Critical / High / Medium / Low / Info) + new-finding badge |
 | **Findings tab** | Full findings table — filterable by severity, tool, keyword — expandable rows with evidence and remediation |
-| **Recon tab** | nmap port table · whatweb tech fingerprint · WAF detection result |
+| **Recon tab** | nmap port table · whatweb tech fingerprint · WAF/CDN detection result |
 | **JS Secrets tab** | Secrets found in JavaScript files |
 | **Scan Diff tab** | New vs resolved findings compared to the previous scan on the same target |
+| **Tools tab** | Run any individual tool on demand — paste a target, fill tool-specific params, stream live output |
 | **Config tab** | Paths, rate limits, profile defaults, tool availability status |
 
 ---
@@ -52,14 +53,17 @@ Built for local use. No cloud, no accounts, no data leaves your machine.
 ## Scan Workflow
 
 ```
-Phase 1 — Recon       wafw00f → subfinder → dnsx → naabu → nmap -sV → whatweb
-Phase 2 — Discovery   httpx → katana + gospider + hakrawler (parallel) → gau → dedup
-Phase 3 — Scanning    nuclei (all discovered URLs) → ffuf (path bruteforce)
+Phase 1 — Recon       wafw00f → cdncheck → nmap → asnmap → tlsx → whatweb
+Phase 2 — Discovery   subfinder → dnsx → [alterx + shuffledns (deep)] → naabu
+                       → katana + gospider + hakrawler (parallel) → gau → urlfinder
+                       → httpx (live-probe all discovered URLs) → dedup
+Phase 3 — Scanning    nuclei (all discovered URLs) → ffuf (path bruteforce, auto-calibrated)
                        → JS secret scan (regex + gitleaks on every JS file)
 Phase 4 — Aggregation dedup by (url, name) → risk scoring → diff vs last scan → SQLite
 ```
 
 WAF detected → rate limits automatically increased, user warned in UI.
+CDN detected → flagged in UI (asnmap + tlsx findings still run for infrastructure recon).
 Non-standard ports found by nmap → probed by nuclei and curl too.
 
 ---
@@ -68,24 +72,44 @@ Non-standard ports found by nmap → probed by nuclei and curl too.
 
 HAST wraps these tools. Each is detected automatically from `PATH`. Missing tools are skipped with a warning — the scan continues with whatever is available.
 
-| Tool | Purpose |
-|---|---|
-| `nmap` | Port scanning, service fingerprinting |
-| `subfinder` | Subdomain discovery |
-| `dnsx` | DNS resolution of discovered hosts |
-| `naabu` | Fast port discovery on resolved hosts |
-| `httpx` | Live HTTP probing and URL validation |
-| `nuclei` | Main vulnerability and exposure scanner |
-| `katana` | Primary crawler (depth 3) |
-| `gospider` | Parallel crawler (standard + deep profiles) |
-| `hakrawler` | Fallback crawler (deep profile) |
-| `gau` | Historical URL discovery via Wayback/CommonCrawl/AlienVault |
-| `ffuf` | Directory and file bruteforce |
-| `trufflehog` | Secret scanning |
-| `gitleaks` | Alternative secret scanner |
-| `wafw00f` | WAF detection (runs first, affects aggressiveness) |
-| `whatweb` | Deep technology fingerprinting |
-| `curl` | Manual path probe fallback when ffuf is missing |
+**Recon**
+
+| Tool | Source | Purpose |
+|---|---|---|
+| `wafw00f` | pip | WAF detection — runs first, adjusts rate limits |
+| `cdncheck` | PDTM | CDN detection (Cloudflare, Akamai, Fastly, …) |
+| `nmap` | apt | Port scanning and service fingerprinting |
+| `asnmap` | PDTM | ASN and IP range lookup |
+| `tlsx` | PDTM | TLS/SSL certificate analysis and weakness detection |
+| `whatweb` | gem | Technology fingerprinting |
+
+**Discovery**
+
+| Tool | Source | Purpose |
+|---|---|---|
+| `subfinder` | PDTM | Passive subdomain enumeration |
+| `dnsx` | PDTM | DNS resolution of discovered hosts |
+| `alterx` | PDTM | Subdomain permutation generation (deep profile) |
+| `shuffledns` | PDTM | Brute-force DNS resolution of permutations (deep profile) |
+| `naabu` | PDTM | Fast port scanning of resolved subdomains |
+| `katana` | PDTM | Primary web crawler (depth 3–4) |
+| `gospider` | GitHub | Parallel web crawler (standard + deep) |
+| `hakrawler` | GitHub | Additional crawler (deep profile) |
+| `gau` | GitHub | Historical URLs from Wayback/CommonCrawl/AlienVault |
+| `urlfinder` | PDTM | Passive URL discovery from JS and sitemaps |
+| `httpx` | PDTM | Live HTTP probing of all discovered endpoints |
+
+**Scanning**
+
+| Tool | Source | Purpose |
+|---|---|---|
+| `nuclei` | PDTM | CVE, misconfiguration, and exposure scanning |
+| `ffuf` | GitHub | Directory and file bruteforce (auto-calibrated soft-404 filter) |
+| `gitleaks` | GitHub | Secret scanning in JavaScript files |
+| `trufflehog` | GitHub | Alternative secret scanner |
+| `curl` | apt | Manual path probe fallback when ffuf is missing |
+
+All tools run inside Docker — nothing needs to be installed on the host.
 
 ---
 

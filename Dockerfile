@@ -21,8 +21,23 @@ RUN set -eux \
     esac \
  && echo "==> Detected arch: $GOARCH (uname -m: $UNAME)" \
  \
- && pdtm -ia -bp /tools \
- || echo "[warn] pdtm install-all failed" \
+ && mkdir -p /root/pd-tools \
+ && HOME=/root pdtm \
+      -i nuclei \
+      -i katana \
+      -i subfinder \
+      -i dnsx \
+      -i httpx \
+      -i naabu \
+      -i tlsx \
+      -i cdncheck \
+      -i asnmap \
+      -i alterx \
+      -i shuffledns \
+      -i urlfinder \
+      -bp /root/pd-tools \
+ && find /root/pd-tools -maxdepth 1 -type f -perm -111 -exec cp {} /tools/ \; \
+ || echo "[warn] pdtm selective install failed" \
  \
  && VER=$(curl -sf https://api.github.com/repos/jaeles-project/gospider/releases/latest \
           | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
@@ -81,7 +96,13 @@ LABEL org.opencontainers.image.description="Hardening & Attack Surface Tester"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nmap curl ca-certificates libcap2-bin \
     ruby ruby-dev build-essential \
- && gem install --no-document whatweb 2>/dev/null || echo "[warn] whatweb gem install failed" \
+ && gem install --no-document whatweb \
+ && GEM_BINDIR="$(gem env bindir)" \
+ && ([ -f "${GEM_BINDIR}/whatweb" ] \
+     && cp "${GEM_BINDIR}/whatweb" /usr/local/bin/whatweb \
+     || find /usr /var/lib/gems -name 'whatweb' -type f 2>/dev/null \
+        | head -1 | xargs -I{} cp {} /usr/local/bin/whatweb) \
+ && chmod +x /usr/local/bin/whatweb \
  && apt-get purge -y build-essential ruby-dev \
  && apt-get autoremove -y \
  && rm -rf /var/lib/apt/lists/* /root/.gem/ruby/*/cache
@@ -98,6 +119,7 @@ RUN pip install --no-cache-dir requests wafw00f
 # Copy Go binaries from stage 1 — use a script so missing ones are silently skipped
 COPY --from=tool-downloader /tools/ /tmp/go-tools/
 RUN find /tmp/go-tools -maxdepth 1 -type f -perm -111 -exec cp {} /usr/local/bin/ \; \
+ && chmod -R a+rx /usr/local/bin/ \
  && rm -rf /tmp/go-tools
 
 # Pull nuclei-templates (best-effort; configurable at runtime)

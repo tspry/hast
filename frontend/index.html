@@ -122,11 +122,11 @@
         <span class="phase-status-badge badge-idle" id="badge-recon">idle</span>
       </div>
       <div id="tools-recon">
-        <div class="tool-row" id="tool-subfinder"><span class="tool-dot dot-queued"></span><span class="tool-name">subfinder</span></div>
-        <div class="tool-row" id="tool-dnsx"><span class="tool-dot dot-queued"></span><span class="tool-name">dnsx</span></div>
-        <div class="tool-row" id="tool-naabu"><span class="tool-dot dot-queued"></span><span class="tool-name">naabu</span></div>
         <div class="tool-row" id="tool-wafw00f"><span class="tool-dot dot-queued"></span><span class="tool-name">wafw00f</span></div>
+        <div class="tool-row" id="tool-cdncheck"><span class="tool-dot dot-queued"></span><span class="tool-name">cdncheck</span></div>
         <div class="tool-row" id="tool-nmap"><span class="tool-dot dot-queued"></span><span class="tool-name">nmap</span></div>
+        <div class="tool-row" id="tool-asnmap"><span class="tool-dot dot-queued"></span><span class="tool-name">asnmap</span></div>
+        <div class="tool-row" id="tool-tlsx"><span class="tool-dot dot-queued"></span><span class="tool-name">tlsx</span></div>
         <div class="tool-row" id="tool-whatweb"><span class="tool-dot dot-queued"></span><span class="tool-name">whatweb</span></div>
       </div>
     </div>
@@ -138,11 +138,17 @@
         <span class="phase-status-badge badge-idle" id="badge-discovery">idle</span>
       </div>
       <div id="tools-discovery">
-        <div class="tool-row" id="tool-httpx"><span class="tool-dot dot-queued"></span><span class="tool-name">httpx</span></div>
+        <div class="tool-row" id="tool-subfinder"><span class="tool-dot dot-queued"></span><span class="tool-name">subfinder</span></div>
+        <div class="tool-row" id="tool-dnsx"><span class="tool-dot dot-queued"></span><span class="tool-name">dnsx</span></div>
+        <div class="tool-row" id="tool-alterx"><span class="tool-dot dot-queued"></span><span class="tool-name">alterx</span></div>
+        <div class="tool-row" id="tool-shuffledns"><span class="tool-dot dot-queued"></span><span class="tool-name">shuffledns</span></div>
+        <div class="tool-row" id="tool-naabu"><span class="tool-dot dot-queued"></span><span class="tool-name">naabu</span></div>
         <div class="tool-row" id="tool-katana"><span class="tool-dot dot-queued"></span><span class="tool-name">katana</span></div>
         <div class="tool-row" id="tool-gospider"><span class="tool-dot dot-queued"></span><span class="tool-name">gospider</span></div>
         <div class="tool-row" id="tool-hakrawler"><span class="tool-dot dot-queued"></span><span class="tool-name">hakrawler</span></div>
         <div class="tool-row" id="tool-gau"><span class="tool-dot dot-queued"></span><span class="tool-name">gau</span></div>
+        <div class="tool-row" id="tool-urlfinder"><span class="tool-dot dot-queued"></span><span class="tool-name">urlfinder</span></div>
+        <div class="tool-row" id="tool-httpx"><span class="tool-dot dot-queued"></span><span class="tool-name">httpx</span></div>
       </div>
     </div>
 
@@ -259,6 +265,7 @@
     <button class="tab-btn" onclick="App.showTab('recon')" id="tab-recon">Recon</button>
     <button class="tab-btn" onclick="App.showTab('js-secrets')" id="tab-js-secrets">JS Secrets</button>
     <button class="tab-btn" onclick="App.showTab('diff')" id="tab-diff">Scan Diff</button>
+    <button class="tab-btn" onclick="App.showTab('tools')" id="tab-tools">Tools</button>
     <button class="tab-btn" onclick="App.showTab('config')" id="tab-config">Config</button>
     <div class="tab-actions">
       <button class="btn btn-ghost btn-sm" onclick="App.exportData('json')" title="Export JSON">⬇ JSON</button>
@@ -349,6 +356,22 @@
   <div class="tab-pane" id="pane-diff">
     <div id="diff-content">
       <div class="empty-state">Run multiple scans on the same target to see diff.</div>
+    </div>
+  </div>
+
+  <!-- Tools Tab -->
+  <div class="tab-pane" id="pane-tools">
+    <div class="tools-tab-header">
+      <div class="tools-phase-filters">
+        <button class="phase-filter-btn active" onclick="App.filterToolCards('all', this)">All</button>
+        <button class="phase-filter-btn" onclick="App.filterToolCards('recon', this)">Recon</button>
+        <button class="phase-filter-btn" onclick="App.filterToolCards('discovery', this)">Discovery</button>
+        <button class="phase-filter-btn" onclick="App.filterToolCards('scanning', this)">Scanning</button>
+      </div>
+      <span style="font-size:11px; color:var(--text-muted);">Output streams to terminal · Findings appear in Findings tab</span>
+    </div>
+    <div class="tool-cards-grid" id="tool-cards-grid">
+      <!-- populated by App.loadToolsTab() -->
     </div>
   </div>
 

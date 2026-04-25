@@ -662,6 +662,7 @@ class FfufTool(SimpleToolRunner):
                     "200,201,301,302,307,308",
                     "-fc",
                     "403,404,429",
+                    "-ac",          # auto-calibrate: detect and filter soft-404 baselines
                     "-o",
                     out_file,
                     "-of",
@@ -703,8 +704,14 @@ def _parse_ffuf_output(output_file: str, target: str) -> list[Finding]:
         url = r.get("url", "")
         status = r.get("status", 0)
         length = r.get("length", 0)
+        words = r.get("words", 0)
         path = r.get("input", {}).get("FUZZ", "")
         path_lower = path.lower()
+
+        # Skip responses that look like soft-404s: tiny body on a 200
+        # (e.g. CDN/proxy returning 200 with an empty or near-empty body)
+        if status == 200 and length < 10 and words < 2:
+            continue
 
         # Remediation: first partial key match wins
         remediation = "Review and restrict access to this file."

@@ -15,6 +15,73 @@ const App = (() => {
   let pingInterval = null;
 
   const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+
+  // ── Tools Catalog ──────────────────────────────────────────────────────────
+
+  const TOOLS_CATALOG = [
+    // Recon
+    { name: "wafw00f",  phase: "recon", desc: "Detect Web Application Firewalls via response fingerprinting.",
+      params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
+    { name: "cdncheck", phase: "recon", desc: "Detect CDN/cloud provider (Cloudflare, Akamai, Fastly, AWS, etc.).",
+      params: [{ id: "target", label: "Target URL / IP", placeholder: "https://target.com" }] },
+    { name: "nmap",     phase: "recon", desc: "Port scanner — discover open services and versions.",
+      params: [{ id: "target", label: "Target URL / IP", placeholder: "https://target.com" }] },
+    { name: "asnmap",   phase: "recon", desc: "Map target IP to ASN, org name and CIDR ranges.",
+      params: [{ id: "target", label: "Target URL / IP", placeholder: "https://target.com" }] },
+    { name: "tlsx",     phase: "recon", desc: "TLS/cert scanner — expiry, self-signed, weak version, mismatches.",
+      params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
+    { name: "whatweb",  phase: "recon", desc: "Technology fingerprinting — CMS, frameworks, server software.",
+      params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
+    // Discovery
+    { name: "subfinder", phase: "discovery", desc: "Passive subdomain enumeration from DNS, APIs, and crawling.",
+      params: [{ id: "target", label: "Domain", placeholder: "example.com" }] },
+    { name: "dnsx",      phase: "discovery", desc: "Resolve and validate DNS records for a list of hosts.",
+      params: [
+        { id: "target",  label: "Target URL (domain auto-extracted)", placeholder: "https://target.com" },
+        { id: "hosts",   label: "Or: hosts (comma-separated)", placeholder: "sub1.example.com, sub2.example.com" },
+      ] },
+    { name: "naabu",     phase: "discovery", desc: "Fast port scanner optimised for large-scale host enumeration.",
+      params: [
+        { id: "target",    label: "Host / IP", placeholder: "example.com" },
+        { id: "top_ports", label: "Top N ports", placeholder: "100" },
+      ] },
+    { name: "httpx",     phase: "discovery", desc: "HTTP probing — confirm live endpoints, grab titles and headers.",
+      params: [{ id: "targets", label: "Targets (comma-separated URLs/hosts)", placeholder: "https://target.com, sub.example.com" }] },
+    { name: "katana",    phase: "discovery", desc: "Fast, configurable web crawler with JavaScript rendering support.",
+      params: [
+        { id: "target", label: "Target URL", placeholder: "https://target.com" },
+        { id: "depth",  label: "Crawl depth", placeholder: "2" },
+      ] },
+    { name: "gospider",  phase: "discovery", desc: "Fast web spider for link and endpoint extraction.",
+      params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
+    { name: "hakrawler", phase: "discovery", desc: "Simple, fast crawler focused on JS files and endpoints.",
+      params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
+    { name: "gau",        phase: "discovery", desc: "Historical URL fetcher from Wayback Machine, OTX, and URLScan.",
+      params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
+    { name: "alterx",    phase: "discovery", desc: "Generate subdomain permutations from a list of known subdomains.",
+      params: [{ id: "target", label: "Subdomains (comma-separated)", placeholder: "api.example.com, dev.example.com" }] },
+    { name: "shuffledns", phase: "discovery", desc: "Mass DNS brute-force using a wordlist and public resolvers.",
+      params: [
+        { id: "target",    label: "Domain", placeholder: "example.com" },
+        { id: "wordlist",  label: "Wordlist path", placeholder: "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt" },
+        { id: "resolvers", label: "Resolvers path", placeholder: "/usr/share/seclists/Miscellaneous/dns-resolvers.txt" },
+      ] },
+    { name: "urlfinder", phase: "discovery", desc: "Extract URLs from JS files and HTML responses.",
+      params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
+    // Scanning
+    { name: "nuclei",    phase: "scanning",  desc: "Template-based vulnerability scanner with 9000+ templates.",
+      params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
+    { name: "ffuf",      phase: "scanning",  desc: "Fast web fuzzer — probe for exposed paths, configs and files.",
+      params: [
+        { id: "target",       label: "Target URL", placeholder: "https://target.com" },
+        { id: "full_wordlist", label: "Full wordlist (slow)", type: "checkbox" },
+      ] },
+    { name: "gitleaks",  phase: "scanning",  desc: "Secret detection in JS files — API keys, tokens, credentials.",
+      params: [{ id: "js_url", label: "JS file URL", placeholder: "https://target.com/app.bundle.js" }] },
+  ];
+
+  let toolAvailability = {};   // tool name -> bool
+  const toolRunIds = {};       // tool name -> current run_id (or null)
   const SEV_COLORS = {
     critical: "#ff4d4d",
     high: "#f97316",
@@ -132,6 +199,14 @@ const App = (() => {
         setScanRunning(false);
         setStatus("Error");
         log("error", `[HAST] Error: ${data.error}`);
+        break;
+
+      case "tool_run_started":
+        onToolRunStarted(data.tool, data.run_id);
+        break;
+
+      case "tool_run_done":
+        onToolRunDone(data.tool, data.run_id);
         break;
 
       case "pong":
@@ -420,8 +495,10 @@ const App = (() => {
       wafEl.textContent = "—";
     }
 
-    // Ports — collected from findings
-    const portFindings = allFindings.filter((f) => f.tool === "nmap" && f.raw);
+    // Ports — parse from finding name/evidence (raw field is not persisted to DB)
+    const portFindings = allFindings.filter(
+      (f) => f.tool === "nmap" && f.name.startsWith("Open Port:")
+    );
     const tbody = document.getElementById("port-tbody");
     if (portFindings.length === 0) {
       tbody.innerHTML =
@@ -429,8 +506,13 @@ const App = (() => {
     } else {
       tbody.innerHTML = portFindings
         .map((f) => {
-          const raw =
-            typeof f.raw === "string" ? JSON.parse(f.raw || "{}") : f.raw || {};
+          // name: "Open Port: 80/tcp (http)"
+          const nm = f.name.match(/Open Port: (\w+)\/(tcp|udp) \(([^)]+)\)/);
+          const port    = nm ? nm[1] : "?";
+          const proto   = nm ? nm[2] : "tcp";
+          const service = nm ? nm[3] : "";
+          // evidence: "Port 80/tcp open — Apache httpd 2.4.50"
+          const version = (f.evidence || "").replace(/^Port \S+ open — /, "").replace(/^Port \S+ open$/, "");
           const sevColor =
             f.severity === "high"
               ? "var(--sev-high)"
@@ -438,10 +520,10 @@ const App = (() => {
                 ? "var(--sev-medium)"
                 : "var(--text-secondary)";
           return `<tr>
-          <td style="color:${sevColor};font-family:var(--font-mono);">${escHtml(raw.port || "")}</td>
-          <td style="color:var(--text-muted);">${escHtml(raw.protocol || "tcp")}</td>
-          <td>${escHtml(raw.service || "")}</td>
-          <td style="color:var(--text-muted);font-size:10px;">${escHtml(raw.version || "")}</td>
+          <td style="color:${sevColor};font-family:var(--font-mono);">${escHtml(port)}</td>
+          <td style="color:var(--text-muted);">${escHtml(proto)}</td>
+          <td>${escHtml(service)}</td>
+          <td style="color:var(--text-muted);font-size:10px;">${escHtml(version)}</td>
         </tr>`;
         })
         .join("");
@@ -716,7 +798,26 @@ const App = (() => {
     document.getElementById("profile-select").value = scan.profile;
     setStatus(scan.status, scan.target);
 
+    // Reset all phase badges and recon state for the new scan
+    resetPhases();
+    recon.waf = null;
+    recon.ports = [];
+    recon.technologies = [];
+
+    // Restore WAF status from scan record
+    const wafDetected = Boolean(scan.waf_detected);
+    const wafName = scan.waf_name || "";
+    onWafDetected({ detected: wafDetected, name: wafName, message: "" });
+
+    // Mark all phases as completed (this is a finished historical scan)
+    if (scan.status === "completed") {
+      ["recon", "discovery", "scanning", "aggregation"].forEach((p) =>
+        updatePhase(p, "completed"),
+      );
+    }
+
     allFindings = [];
+    resetCounts();
     await loadScanFindings(safeScanId);
     await loadScanDiff(safeScanId);
     showTab("findings");
@@ -830,9 +931,8 @@ const App = (() => {
       .forEach((p) => p.classList.remove("active"));
     document.getElementById(`tab-${tab}`).classList.add("active");
     document.getElementById(`pane-${tab}`).classList.add("active");
-    if (tab === "config") {
-      loadToolStatus();
-    }
+    if (tab === "config") loadToolStatus();
+    if (tab === "tools")  loadToolsTab();
   }
 
   // ── UI Helpers ─────────────────────────────────────────────────────────────
@@ -908,6 +1008,143 @@ const App = (() => {
       dragging = false;
       document.body.style.userSelect = "";
     });
+  }
+
+  // ── Tools Tab ──────────────────────────────────────────────────────────────
+
+  async function loadToolsTab() {
+    try {
+      const resp = await fetch("/api/tools/status");
+      const data = await resp.json();
+      toolAvailability = {};
+      for (const [name, info] of Object.entries(data.tools)) {
+        toolAvailability[name] = info.available;
+      }
+    } catch (_) {}
+    renderToolCards("all");
+  }
+
+  function renderToolCards(phaseFilter) {
+    const grid = document.getElementById("tool-cards-grid");
+    const currentTarget = document.getElementById("target-input").value.trim();
+    const tools = phaseFilter === "all"
+      ? TOOLS_CATALOG
+      : TOOLS_CATALOG.filter((t) => t.phase === phaseFilter);
+
+    grid.innerHTML = tools.map((t) => {
+      const available = toolAvailability[t.name] !== false;
+      const runId = toolRunIds[t.name] || null;
+      const isRunning = !!runId;
+
+      const paramsHtml = t.params.map((p) => {
+        if (p.type === "checkbox") {
+          return `<label class="tool-param-group" style="flex-direction:row;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" data-param="${escHtml(p.id)}" style="cursor:pointer;">
+            <span class="tool-param-label" style="text-transform:none;font-size:11px;">${escHtml(p.label)}</span>
+          </label>`;
+        }
+        const val = (p.id === "target" || p.id === "targets" || p.id === "hosts" || p.id === "js_url")
+          ? currentTarget : (p.placeholder || "");
+        return `<div class="tool-param-group">
+          <span class="tool-param-label">${escHtml(p.label)}</span>
+          <input class="tool-param-input" type="text" data-param="${escHtml(p.id)}"
+            placeholder="${escHtml(p.placeholder || "")}"
+            value="${escHtml(p.id === "top_ports" || p.id === "depth" ? (p.placeholder || "") : (p.id !== "hosts" ? currentTarget : ""))}">
+        </div>`;
+      }).join("");
+
+      const btnHtml = isRunning
+        ? `<button class="btn btn-danger btn-sm" onclick="App.stopToolRun('${escHtml(t.name)}')">■ Stop</button>`
+        : `<button class="btn btn-primary btn-sm" ${available ? "" : "disabled title='Tool not installed'"}
+             onclick="App.runTool('${escHtml(t.name)}', this.closest('.tool-card'))">▶ Run</button>`;
+
+      return `<div class="tool-card${isRunning ? " tool-running" : ""}" data-tool="${escHtml(t.name)}" data-phase="${escHtml(t.phase)}">
+        <div class="tool-card-header">
+          <span class="tool-avail-dot${available ? " available" : ""}"></span>
+          <span class="tool-card-name">${escHtml(t.name)}</span>
+          <span class="tool-phase-badge ${escHtml(t.phase)}">${escHtml(t.phase)}</span>
+        </div>
+        <div class="tool-card-desc">${escHtml(t.desc)}</div>
+        <div class="tool-card-params">${paramsHtml}</div>
+        <div class="tool-card-footer">
+          ${btnHtml}
+          <span class="tool-run-status${isRunning ? " running" : ""}" id="tool-run-status-${escHtml(t.name)}">
+            ${isRunning ? "Running…" : (available ? "Ready" : "Not installed")}
+          </span>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function filterToolCards(phase, btn) {
+    document.querySelectorAll(".phase-filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    renderToolCards(phase);
+  }
+
+  function runTool(toolName, card) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      log("error", "[tools] WebSocket not connected.");
+      return;
+    }
+    const params = {};
+    card.querySelectorAll("[data-param]").forEach((el) => {
+      const key = el.getAttribute("data-param");
+      params[key] = el.type === "checkbox" ? el.checked : el.value.trim();
+    });
+    // Use main target-input as fallback for target
+    if (!params.target && !params.targets && !params.js_url) {
+      params.target = document.getElementById("target-input").value.trim();
+    }
+    send({ type: "run_tool", tool: toolName, params });
+    log("info", `[tools] Running ${toolName}…`);
+    showTab("findings");
+  }
+
+  function stopToolRun(toolName) {
+    const runId = toolRunIds[toolName];
+    if (runId) {
+      send({ type: "stop_tool_run", run_id: runId });
+    }
+  }
+
+  function onToolRunStarted(toolName, runId) {
+    toolRunIds[toolName] = runId;
+    const statusEl = document.getElementById(`tool-run-status-${toolName}`);
+    if (statusEl) {
+      statusEl.textContent = "Running…";
+      statusEl.className = "tool-run-status running";
+    }
+    const card = document.querySelector(`.tool-card[data-tool="${toolName}"]`);
+    if (card) card.classList.add("tool-running");
+  }
+
+  function onToolRunDone(toolName, runId) {
+    if (toolRunIds[toolName] === runId) delete toolRunIds[toolName];
+    const statusEl = document.getElementById(`tool-run-status-${toolName}`);
+    if (statusEl) {
+      statusEl.textContent = "Done";
+      statusEl.className = "tool-run-status done";
+      setTimeout(() => {
+        if (statusEl) { statusEl.textContent = "Ready"; statusEl.className = "tool-run-status"; }
+      }, 4000);
+    }
+    const card = document.querySelector(`.tool-card[data-tool="${toolName}"]`);
+    if (card) {
+      card.classList.remove("tool-running");
+      // Swap Stop back to Run button
+      const footer = card.querySelector(".tool-card-footer");
+      if (footer) {
+        const btn = footer.querySelector("button");
+        if (btn && btn.textContent.includes("Stop")) {
+          const avail = toolAvailability[toolName] !== false;
+          btn.className = "btn btn-primary btn-sm";
+          btn.disabled = !avail;
+          btn.textContent = "▶ Run";
+          btn.setAttribute("onclick", `App.runTool('${toolName}', this.closest('.tool-card'))`);
+        }
+      }
+    }
   }
 
   // ── Bulk Scan ──────────────────────────────────────────────────────────────
@@ -1058,5 +1295,8 @@ const App = (() => {
     openBulkScan,
     closeBulkScan,
     runBulkScan,
+    filterToolCards,
+    runTool,
+    stopToolRun,
   };
 })();

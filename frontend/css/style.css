@@ -711,3 +711,152 @@ body {
   transition: background 0.15s;
 }
 #resize-handle:hover { background: var(--accent); }
+
+/* ── Tools Tab ── */
+.tools-tab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tools-phase-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.phase-filter-btn {
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.phase-filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.phase-filter-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 600;
+}
+
+.tool-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.tool-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s;
+}
+.tool-card:hover { border-color: var(--accent); }
+.tool-card.tool-running { border-color: var(--yellow); }
+
+.tool-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-avail-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--red);
+}
+.tool-avail-dot.available { background: var(--green); }
+
+.tool-card-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.tool-phase-badge {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+.tool-phase-badge.recon    { background: #1d3557; color: #74b9ff; }
+.tool-phase-badge.discovery { background: #1e3a2f; color: #55efc4; }
+.tool-phase-badge.scanning  { background: #3d1f00; color: #fdcb6e; }
+
+.tool-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.tool-card-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-param-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tool-param-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tool-param-input {
+  padding: 5px 9px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+  width: 100%;
+}
+.tool-param-input:focus { border-color: var(--accent); }
+
+.tool-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.tool-run-status {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-run-status.running { color: var(--yellow); }
+.tool-run-status.done    { color: var(--green); }
+.tool-run-status.error   { color: var(--red); }

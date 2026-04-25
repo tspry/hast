@@ -488,22 +488,13 @@ async def tools_status():
     from backend.config import resolve_tool_path
 
     tools = [
-        "subfinder",
-        "dnsx",
-        "naabu",
-        "httpx",
-        "nmap",
-        "nuclei",
-        "katana",
-        "gospider",
-        "hakrawler",
-        "gau",
-        "ffuf",
-        "trufflehog",
-        "gitleaks",
-        "wafw00f",
-        "whatweb",
-        "curl",
+        # Recon
+        "wafw00f", "cdncheck", "nmap", "asnmap", "tlsx", "whatweb",
+        # Discovery
+        "subfinder", "dnsx", "alterx", "shuffledns", "naabu",
+        "katana", "gospider", "hakrawler", "gau", "urlfinder", "httpx",
+        # Scanning
+        "nuclei", "ffuf", "curl", "gitleaks", "trufflehog",
     ]
     return {
         "tools": {

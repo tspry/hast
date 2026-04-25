@@ -20,10 +20,14 @@ from backend.scanner.tools.projectdiscovery_tools import (
     HttpxTool,
     NaabuTool,
     SubfinderTool,
+    AlterxTool,
+    ShuffleDnsTool,
+    UrlffinderTool,
     parse_dnsx_record,
     parse_httpx_record,
     parse_subfinder_record,
 )
+from backend.config import get_config
 
 
 async def run_discovery(
@@ -151,6 +155,66 @@ async def run_discovery(
 
     if not resolved_hosts and target_host:
         resolved_hosts.add(target_host)
+
+    # ── alterx + shuffledns (deep only) ──────────────────────────────────────
+    if profile == "deep" and subdomains:
+        await emit("tool_status", {"tool": "alterx", "status": "running"})
+        alterx = AlterxTool()
+        permuted: set[str] = set()
+        if not alterx.available:
+            await emit("tool_status", {"tool": "alterx", "status": "skipped",
+                                       "message": "alterx not found"})
+        else:
+            async for item in alterx.permute(sorted(subdomains)):
+                if isinstance(item, ToolEvent) and item.stream == "stdout":
+                    h = item.data.strip()
+                    if h:
+                        permuted.add(h)
+                elif isinstance(item, ToolEvent):
+                    await emit("log", {"tool": "alterx", "stream": item.stream, "data": item.data})
+            await emit("tool_status", {"tool": "alterx", "status": "done",
+                                       "message": f"{len(permuted)} permutations"})
+
+        await emit("tool_status", {"tool": "shuffledns", "status": "running"})
+        shuffledns = ShuffleDnsTool()
+        if not shuffledns.available:
+            await emit("tool_status", {"tool": "shuffledns", "status": "skipped",
+                                       "message": "shuffledns not found"})
+        elif not permuted:
+            await emit("tool_status", {"tool": "shuffledns", "status": "skipped",
+                                       "message": "no permutations to resolve"})
+        else:
+            cfg = get_config()
+            seclists = cfg.get("seclists_path", "")
+            import os
+            resolvers_candidates = [
+                os.path.join(seclists, "Miscellaneous", "dns-resolvers.txt"),
+                "/usr/share/seclists/Miscellaneous/dns-resolvers.txt",
+                "/app/resolvers.txt",
+            ]
+            resolvers_file = next((p for p in resolvers_candidates if os.path.isfile(p)), "")
+            wordlist_candidates = [
+                os.path.join(seclists, "Discovery", "DNS", "subdomains-top1million-5000.txt"),
+                "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt",
+            ]
+            wordlist_file = next((p for p in wordlist_candidates if os.path.isfile(p)), "")
+
+            if not resolvers_file or not wordlist_file:
+                await emit("tool_status", {"tool": "shuffledns", "status": "skipped",
+                                           "message": "resolvers/wordlist not found"})
+            else:
+                bruteforced: set[str] = set()
+                async for item in shuffledns.bruteforce(target_host, wordlist_file, resolvers_file):
+                    if isinstance(item, ToolEvent) and item.stream == "stdout":
+                        h = parse_dnsx_record(item.data) or item.data.strip()
+                        if h:
+                            bruteforced.add(h)
+                    elif isinstance(item, ToolEvent):
+                        await emit("log", {"tool": "shuffledns", "stream": item.stream, "data": item.data})
+                resolved_hosts.update(bruteforced)
+                subdomains.update(bruteforced)
+                await emit("tool_status", {"tool": "shuffledns", "status": "done",
+                                           "message": f"{len(bruteforced)} new hosts"})
 
     # ── naabu ───────────────────────────────────────────────────────────────
     naabu_hosts = sorted(
@@ -286,6 +350,26 @@ async def run_discovery(
             "tool_status",
             {"tool": "gau", "status": "done", "message": f"{len(gau_urls)} URLs"},
         )
+
+    # ── urlfinder (standard + deep) ──────────────────────────────────────────
+    if profile in ("standard", "deep"):
+        await emit("tool_status", {"tool": "urlfinder", "status": "running"})
+        urlfinder = UrlffinderTool()
+        if not urlfinder.available:
+            await emit("tool_status", {"tool": "urlfinder", "status": "skipped",
+                                       "message": "urlfinder not found"})
+        else:
+            uf_urls: set[str] = set()
+            async for item in urlfinder.find(target):
+                if isinstance(item, ToolEvent):
+                    if item.stream == "stdout":
+                        for url in extract_urls_from_line(item.data):
+                            uf_urls.add(url)
+                    else:
+                        await emit("log", {"tool": "urlfinder", "stream": item.stream, "data": item.data})
+            all_urls.update(uf_urls)
+            await emit("tool_status", {"tool": "urlfinder", "status": "done",
+                                       "message": f"{len(uf_urls)} URLs"})
 
     # ── httpx ────────────────────────────────────────────────────────────────
     probe_targets_set = set(all_urls)
