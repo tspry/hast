@@ -785,13 +785,11 @@ body {
 #resize-handle:hover { background: var(--accent); }
 
 /* ── Tools Tab ── */
-.tools-tab-header {
+.tools-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  margin-bottom: 16px;
   gap: 12px;
   flex-wrap: wrap;
 }
@@ -821,11 +819,9 @@ body {
 
 .tool-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
-  padding: 14px 16px;
-  overflow-y: auto;
-  flex: 1;
+  padding-top: 4px;
 }
 
 .tool-card {

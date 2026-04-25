@@ -971,7 +971,6 @@ const App = (() => {
     document.getElementById(`tab-${tab}`).classList.add("active");
     document.getElementById(`pane-${tab}`).classList.add("active");
     if (tab === "config") loadToolStatus();
-    if (tab === "tools")  loadToolsTab();
   }
 
   // ── UI Helpers ─────────────────────────────────────────────────────────────
@@ -1151,6 +1150,7 @@ const App = (() => {
     }
     send({ type: "run_tool", tool: toolName, params });
     log("info", `[tools] Running ${toolName}…`);
+    closeToolsModal();
     showTab("findings");
   }
 
@@ -1222,6 +1222,17 @@ const App = (() => {
     document.getElementById("bulk-modal").style.display = "none";
   }
 
+  // ── Tools Modal ────────────────────────────────────────────────────────────
+
+  async function openToolsModal() {
+    document.getElementById("tools-modal").style.display = "flex";
+    await loadToolsTab();
+  }
+
+  function closeToolsModal() {
+    document.getElementById("tools-modal").style.display = "none";
+  }
+
   async function runBulkScan() {
     const raw = document.getElementById("bulk-targets").value;
     const profile = document.getElementById("bulk-profile").value;
@@ -1277,9 +1288,12 @@ const App = (() => {
     }
   }
 
-  // Close modal on backdrop click
+  // Close modals on backdrop click
   document.getElementById("bulk-modal").addEventListener("click", (e) => {
     if (e.target === document.getElementById("bulk-modal")) closeBulkScan();
+  });
+  document.getElementById("tools-modal").addEventListener("click", (e) => {
+    if (e.target === document.getElementById("tools-modal")) closeToolsModal();
   });
 
   // ── Click outside to close history ────────────────────────────────────────
@@ -1349,6 +1363,8 @@ const App = (() => {
     openBulkScan,
     closeBulkScan,
     runBulkScan,
+    openToolsModal,
+    closeToolsModal,
     filterToolCards,
     runTool,
     stopToolRun,

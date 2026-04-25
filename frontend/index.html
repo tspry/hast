@@ -39,7 +39,7 @@
   <div id="waf-badge"></div>
 
   <div style="margin-left:auto; display:flex; gap:6px; align-items:center; position:relative;">
-    <button class="btn btn-ghost btn-sm" id="tab-tools" onclick="App.showTab('tools')" title="Run individual tools on demand">
+    <button class="btn btn-ghost btn-sm" id="tab-tools" onclick="App.openToolsModal()" title="Run individual tools on demand">
       ⚙ Tools
     </button>
     <button class="btn btn-ghost btn-sm" onclick="App.openBulkScan()" title="Scan multiple targets at once">
@@ -115,6 +115,28 @@
     <div style="display:flex; gap:8px; justify-content:flex-end;">
       <button class="btn btn-ghost" onclick="App.closeBulkScan()">Cancel</button>
       <button class="btn btn-primary" id="bulk-run-btn" onclick="App.runBulkScan()">▶ Start Bulk Scan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tools Modal ───────────────────────────────────────────────── -->
+<div id="tools-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:200; align-items:flex-start; justify-content:center; padding-top:48px; overflow-y:auto;">
+  <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:var(--radius-lg); width:900px; max-width:95vw; padding:24px; margin-bottom:48px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+      <h2 style="font-size:15px; font-weight:700;">⚙ Tools</h2>
+      <button class="btn btn-ghost btn-sm" onclick="App.closeToolsModal()">✕</button>
+    </div>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+      <div class="tools-phase-filters">
+        <button class="phase-filter-btn active" onclick="App.filterToolCards('all', this)">All</button>
+        <button class="phase-filter-btn" onclick="App.filterToolCards('recon', this)">Recon</button>
+        <button class="phase-filter-btn" onclick="App.filterToolCards('discovery', this)">Discovery</button>
+        <button class="phase-filter-btn" onclick="App.filterToolCards('scanning', this)">Scanning</button>
+      </div>
+      <span style="font-size:11px; color:var(--text-muted);">Output streams to terminal · Findings appear in Findings tab</span>
+    </div>
+    <div class="tool-cards-grid" id="tool-cards-grid">
+      <!-- populated by App.loadToolsTab() -->
     </div>
   </div>
 </div>
@@ -370,22 +392,6 @@
   <div class="tab-pane" id="pane-diff">
     <div id="diff-content">
       <div class="empty-state">Run multiple scans on the same target to see diff.</div>
-    </div>
-  </div>
-
-  <!-- Tools Tab -->
-  <div class="tab-pane" id="pane-tools">
-    <div class="tools-tab-header">
-      <div class="tools-phase-filters">
-        <button class="phase-filter-btn active" onclick="App.filterToolCards('all', this)">All</button>
-        <button class="phase-filter-btn" onclick="App.filterToolCards('recon', this)">Recon</button>
-        <button class="phase-filter-btn" onclick="App.filterToolCards('discovery', this)">Discovery</button>
-        <button class="phase-filter-btn" onclick="App.filterToolCards('scanning', this)">Scanning</button>
-      </div>
-      <span style="font-size:11px; color:var(--text-muted);">Output streams to terminal · Findings appear in Findings tab</span>
-    </div>
-    <div class="tool-cards-grid" id="tool-cards-grid">
-      <!-- populated by App.loadToolsTab() -->
     </div>
   </div>
 

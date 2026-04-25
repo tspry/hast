@@ -127,10 +127,6 @@ RUN find /tmp/go-tools -maxdepth 1 -type f -perm -111 -exec cp {} /usr/local/bin
  && chmod -R a+rx /usr/local/bin/ \
  && rm -rf /tmp/go-tools
 
-# Pull nuclei-templates (best-effort; configurable at runtime)
-RUN nuclei -update-templates -ud /nuclei-templates -silent 2>/dev/null \
- || echo "[warn] nuclei-templates not downloaded — configure path in Config tab"
-
 # ── Application ───────────────────────────────────────────────────────────────
 WORKDIR /app
 
