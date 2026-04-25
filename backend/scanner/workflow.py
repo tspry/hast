@@ -185,7 +185,11 @@ async def _run_scan(
                     )
                     if discovery_result.get("subdomains"):
                         await db.insert_urls(
-                            scan_id, discovery_result["subdomains"], "subfinder", False
+                            scan_id,
+                            discovery_result["subdomains"],
+                            "subfinder",
+                            False,
+                            ip_map=discovery_result.get("subdomain_ips", {}),
                         )
                     for f in discovery_result.get("findings", []):
                         await db.insert_finding(

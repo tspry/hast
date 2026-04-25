@@ -21,6 +21,12 @@ async def init_db() -> None:
     _db = await aiosqlite.connect(str(DB_PATH))
     _db.row_factory = aiosqlite.Row
     await _db.executescript(CREATE_TABLES)
+    # Migration: add ip column to discovered_urls if it doesn't exist yet
+    try:
+        await _db.execute("ALTER TABLE discovered_urls ADD COLUMN ip TEXT DEFAULT ''")
+        await _db.commit()
+    except Exception:
+        pass  # column already exists
     await _db.commit()
 
 
@@ -131,11 +137,18 @@ async def get_previous_finding_keys(target: str) -> set[str]:
 
 # ── URL CRUD ──────────────────────────────────────────────────────────────────
 
-async def insert_urls(scan_id: str, urls: list[str], source: str, is_js: bool = False) -> None:
+async def insert_urls(
+    scan_id: str,
+    urls: list[str],
+    source: str,
+    is_js: bool = False,
+    ip_map: dict[str, str] | None = None,
+) -> None:
     db = await get_db()
-    data = [(scan_id, url, source, int(is_js)) for url in urls]
+    ip_map = ip_map or {}
+    data = [(scan_id, url, source, int(is_js), ip_map.get(url, "")) for url in urls]
     await db.executemany(
-        "INSERT OR IGNORE INTO discovered_urls (scan_id, url, source, is_js) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO discovered_urls (scan_id, url, source, is_js, ip) VALUES (?, ?, ?, ?, ?)",
         data,
     )
     await db.commit()
@@ -152,14 +165,14 @@ async def get_urls(scan_id: str, js_only: bool = False) -> list[str]:
     return [r["url"] for r in rows]
 
 
-async def get_subdomains(scan_id: str) -> list[str]:
+async def get_subdomains(scan_id: str) -> list[dict]:
     db = await get_db()
     async with db.execute(
-        "SELECT url FROM discovered_urls WHERE scan_id = ? AND source = 'subfinder' ORDER BY url",
+        "SELECT url, ip FROM discovered_urls WHERE scan_id = ? AND source = 'subfinder' ORDER BY url",
         (scan_id,),
     ) as cur:
         rows = await cur.fetchall()
-    return [r["url"] for r in rows]
+    return [{"host": r["url"], "ip": r["ip"] or ""} for r in rows]
 
 
 # ── Checkpoint CRUD ───────────────────────────────────────────────────────────

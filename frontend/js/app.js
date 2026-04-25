@@ -566,7 +566,11 @@ const App = (() => {
     }
     if (countEl) countEl.textContent = `(${subs.length})`;
     listEl.innerHTML = subs
-      .map((s) => `<span class="subdomain-tag">${escHtml(s)}</span>`)
+      .map((s) => {
+        const host = s.host || s;
+        const ip = s.ip || "";
+        return `<span class="subdomain-tag">${escHtml(host)}${ip ? `<span class="subdomain-ip">${escHtml(ip)}</span>` : ""}</span>`;
+      })
       .join("");
   }
 

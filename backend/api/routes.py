@@ -81,7 +81,7 @@ async def get_findings(
 
 
 @router.get("/scans/{scan_id}/subdomains")
-async def get_subdomains(scan_id: str):
+async def get_subdomains_endpoint(scan_id: str):
     subdomains = await db.get_subdomains(scan_id)
     return {"subdomains": subdomains, "count": len(subdomains)}
 

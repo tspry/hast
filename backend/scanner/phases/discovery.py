@@ -24,6 +24,7 @@ from backend.scanner.tools.projectdiscovery_tools import (
     ShuffleDnsTool,
     UrlffinderTool,
     parse_dnsx_record,
+    parse_dnsx_host_ip,
     parse_httpx_record,
     parse_subfinder_record,
 )
@@ -49,6 +50,7 @@ async def run_discovery(
 
     all_urls: set[str] = set()
     subdomains: set[str] = set()
+    subdomain_ips: dict[str, str] = {}   # host → first resolved IP
     resolved_hosts: set[str] = set()
     open_ports: list[dict] = []
     findings: list[Finding] = []
@@ -166,9 +168,13 @@ async def run_discovery(
             )
 
     # Emit subdomains discovered event for live UI update
+    subdomain_list = [
+        {"host": h, "ip": subdomain_ips.get(h, "")}
+        for h in sorted(subdomains)
+    ]
     await emit("subdomains_found", {
-        "subdomains": sorted(subdomains),
-        "count": len(subdomains),
+        "subdomains": subdomain_list,
+        "count": len(subdomain_list),
     })
 
     # ── dnsx ────────────────────────────────────────────────────────────────
@@ -192,9 +198,11 @@ async def run_discovery(
                         {"tool": "dnsx", "stream": item.stream, "data": item.data},
                     )
                     if item.stream == "stdout":
-                        host = parse_dnsx_record(item.data)
+                        host, ip = parse_dnsx_host_ip(item.data)
                         if host:
                             resolved_hosts.add(host)
+                            if ip and host not in subdomain_ips:
+                                subdomain_ips[host] = ip
                 else:
                     await emit("finding", {"finding": _finding_to_dict(item)})
             if resolved_hosts:
@@ -425,6 +433,7 @@ async def run_discovery(
         "open_ports": open_ports,
         "findings": findings,
         "subdomains": sorted(subdomains),
+        "subdomain_ips": subdomain_ips,
     }
 
 

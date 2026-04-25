@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS discovered_urls (
     url     TEXT NOT NULL,
     source  TEXT,
     is_js   INTEGER DEFAULT 0,
+    ip      TEXT DEFAULT '',
     UNIQUE(scan_id, url),
     FOREIGN KEY (scan_id) REFERENCES scans(id)
 );

@@ -383,6 +383,20 @@ def parse_dnsx_record(line: str) -> Optional[str]:
     return _tool_value(data, "host", "domain", "name")
 
 
+def parse_dnsx_host_ip(line: str) -> tuple[Optional[str], str]:
+    """Return (hostname, ip) from a dnsx JSON output line. ip may be empty string."""
+    data = _json_or_text(line)
+    host = _tool_value(data, "host", "domain", "name")
+    ip = ""
+    if isinstance(data, dict):
+        a_records = data.get("a") or data.get("A") or []
+        if isinstance(a_records, list) and a_records:
+            ip = str(a_records[0]).strip()
+        elif isinstance(a_records, str):
+            ip = a_records.strip()
+    return host, ip
+
+
 def parse_httpx_record(line: str) -> Optional[str]:
     data = _json_or_text(line)
     return _tool_value(data, "url", "input", "host")
