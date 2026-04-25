@@ -92,20 +92,10 @@ FROM python:3.12-slim-bookworm
 LABEL org.opencontainers.image.title="HAST Security Scanner"
 LABEL org.opencontainers.image.description="Hardening & Attack Surface Tester"
 
-# nmap, curl, ruby (for whatweb), libcap2-bin (for setcap on nmap)
+# nmap, curl, whatweb (Debian Bookworm package), libcap2-bin (for setcap on nmap)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    nmap curl ca-certificates libcap2-bin \
-    ruby ruby-dev build-essential \
- && gem install --no-document whatweb \
- && GEM_BINDIR="$(gem env bindir)" \
- && ([ -f "${GEM_BINDIR}/whatweb" ] \
-     && cp "${GEM_BINDIR}/whatweb" /usr/local/bin/whatweb \
-     || find /usr /var/lib/gems -name 'whatweb' -type f 2>/dev/null \
-        | head -1 | xargs -I{} cp {} /usr/local/bin/whatweb) \
- && chmod +x /usr/local/bin/whatweb \
- && apt-get purge -y build-essential ruby-dev \
- && apt-get autoremove -y \
- && rm -rf /var/lib/apt/lists/* /root/.gem/ruby/*/cache
+    nmap curl ca-certificates libcap2-bin whatweb \
+ && rm -rf /var/lib/apt/lists/*
 
 # Allow nmap to use raw sockets as non-root (needed for SYN scanning)
 RUN setcap cap_net_raw+ep /usr/bin/nmap
