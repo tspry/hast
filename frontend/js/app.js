@@ -59,7 +59,7 @@ const App = (() => {
     { name: "gau",        phase: "discovery", desc: "Historical URL fetcher from Wayback Machine, OTX, and URLScan.",
       params: [{ id: "target", label: "Target URL", placeholder: "https://target.com" }] },
     { name: "alterx",    phase: "discovery", desc: "Generate subdomain permutations from a list of known subdomains.",
-      params: [{ id: "target", label: "Subdomains (comma-separated)", placeholder: "api.example.com, dev.example.com" }] },
+      params: [{ id: "subdomains", label: "Subdomains (comma-separated)", placeholder: "api.example.com, dev.example.com" }] },
     { name: "shuffledns", phase: "discovery", desc: "Mass DNS brute-force using a wordlist and public resolvers.",
       params: [
         { id: "target",    label: "Domain", placeholder: "example.com" },
